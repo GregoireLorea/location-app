@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>Gestion Stock - Gestion des Locations</title>
+  <link href="style.css" rel="stylesheet" />
+</head>
+<body>
+  <nav class="navbar">
+    <div class="navbar-brand">
+      <h1><a href="index.html" style="color: inherit; text-decoration: none;">Location Manager</a></h1>
+    </div>
+    <ul class="navbar-nav">
+      <li><a href="index.html" class="nav-link">Dashboard</a></li>
+      <li><a href="stock.html" class="nav-link active">Gestion Stock</a></li>
+      <li><a href="locations.html" class="nav-link">Gestion Locations</a></li>
+      <li><a href="calendar.html" class="nav-link">Calendrier</a></li>
+    </ul>
+  </nav>
+
+  <div class="container">
+    <div class="page-header">
+      <h2>Gestion du Stock</h2>
+      <p>Gérez votre inventaire et suivez la disponibilité</p>
+    </div>
+
+    <div class="section">
+      <h3>Ajouter un nouvel article</h3>
+      <div class="form-grid">
+        <input id="name" placeholder="Nom de l'article" required>
+        <input id="description" placeholder="Description" >
+        <input id="price" placeholder="Prix par jour (€)" type="number" step="0.01" required>
+        <input id="caution" placeholder="Caution (€)" type="number" step="0.01" required>
+        <input id="qty" placeholder="Quantité totale" type="number" required>
+        <input id="location" placeholder="Emplacement de stockage">
+        <select id="category">
+          <option value="">Catégorie</option>
+          <option value="electronique">Électronique</option>
+          <option value="mobilier">Mobilier</option>
+          <option value="decoration">Décoration</option>
+          <option value="eclairage">Éclairage</option>
+          <option value="audio">Audio/Vidéo</option>
+          <option value="autre">Autre</option>
+        </select>
+        <button onclick="addStock()" class="btn-primary">Ajouter au stock</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Filtres et recherche</h3>
+      <div class="filter-bar">
+        <input id="searchStock" placeholder="Rechercher..." onkeyup="filterStock()">
+        <select id="categoryFilter" onchange="filterStock()">
+          <option value="">Toutes catégories</option>
+          <option value="electronique">Électronique</option>
+          <option value="mobilier">Mobilier</option>
+          <option value="decoration">Décoration</option>
+          <option value="eclairage">Éclairage</option>
+          <option value="audio">Audio/Vidéo</option>
+          <option value="autre">Autre</option>
+        </select>
+        <select id="availabilityFilter" onchange="filterStock()">
+          <option value="">Toute disponibilité</option>
+          <option value="available">Disponible</option>
+          <option value="partial">Partiellement disponible</option>
+          <option value="unavailable">Non disponible</option>
+          <option value="low">Stock faible</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Inventaire détaillé</h3>
+      <div class="stock-table-container">
+        <table class="stock-table" id="stockTable">
+          <thead>
+            <tr>
+              <th>Article</th>
+              <th>Description</th>
+              <th>Catégorie</th>
+              <th>Prix/jour</th>
+              <th>Caution</th>
+              <th>Stock total</th>
+              <th>Disponible</th>
+              <th>Réservé</th>
+              <th>Emplacement</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="stockTableBody">
+            <tr>
+              <td colspan="10">Chargement...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Réservations prévues</h3>
+      <div id="reservationDetails" class="reservation-details">
+        <p>Chargement des réservations...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal d'édition du stock -->
+  <div id="editStockModal" class="modal">
+    <div class="modal-content">
+      <span class="close" onclick="closeEditStockModal()">&times;</span>
+      <h3>Modifier l'article</h3>
+      <div class="form-grid">
+        <input id="editName" placeholder="Nom de l'article">
+        <input id="editDescription" placeholder="Description">
+        <input id="editPrice" placeholder="Prix par jour (€)" type="number" step="0.01">
+        <input id="editCaution" placeholder="Caution (€)" type="number" step="0.01">
+        <input id="editQty" placeholder="Quantité totale" type="number">
+        <input id="editLocation" placeholder="Emplacement de stockage">
+        <select id="editCategory">
+          <option value="">Catégorie</option>
+          <option value="electronique">Électronique</option>
+          <option value="mobilier">Mobilier</option>
+          <option value="decoration">Décoration</option>
+          <option value="eclairage">Éclairage</option>
+          <option value="audio">Audio/Vidéo</option>
+          <option value="autre">Autre</option>
+        </select>
+        <button onclick="updateStock()" class="btn-primary">Mettre à jour</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let stockData = [];
+    let locationsData = [];
+    let editingStockId = null;
+
+    async function loadAllData() {
+      try {
+        const [stockResponse, locationsResponse] = await Promise.all([
+          fetch('/stock'),
+          fetch('/locations')
+        ]);
+        
+        stockData = await stockResponse.json();
+        locationsData = await locationsResponse.json();
+        
+        refreshStockTable();
+        refreshReservationDetails();
+      } catch (error) {
+        console.error('Erreur lors du chargement:', error);
+      }
+    }
+
+    async function addStock() {
+      const name = document.getElementById('name').value;
+      const description = document.getElementById('description').value;
+      const price = parseFloat(document.getElementById('price').value);
+      const caution = parseFloat(document.getElementById('caution').value);
+      const qty = parseInt(document.getElementById('qty').value);
+      const location = document.getElementById('location').value;
+      const category = document.getElementById('category').value;
+
+      if (!name || isNaN(price) || isNaN(caution) || isNaN(qty)) {
+        alert('Veuillez remplir tous les champs obligatoires');
+        return;
+      }
+
+      try {
+        const response = await fetch('/stock', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            name, 
+            description, 
+            price, 
+            caution, 
+            qty, 
+            location: location || 'Non spécifié',
+            category: category || 'autre'
+          })
+        });
+
+        if (response.ok) {
+          // Réinitialiser le formulaire
+          document.getElementById('name').value = '';
+          document.getElementById('description').value = '';
+          document.getElementById('price').value = '';
+          document.getElementById('caution').value = '';
+          document.getElementById('qty').value = '';
+          document.getElementById('location').value = '';
+          document.getElementById('category').value = '';
+          
+          loadAllData();
+        }
+      } catch (error) {
+        console.error('Erreur lors de l\'ajout:', error);
+      }
+    }
+
+    function refreshStockTable() {
+      const tbody = document.getElementById('stockTableBody');
+      
+      if (stockData.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10">Aucun article en stock</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = stockData.map(item => {
+        const reserved = getReservedQuantity(item.id);
+        const available = (item.qty || 0) - reserved;
+        const availabilityClass = available <= 0 ? 'unavailable' : 
+                                 available <= 2 ? 'low-stock' : 'available';
+
+        return `
+          <tr class="${availabilityClass}">
+            <td><strong>${item.name}</strong></td>
+            <td>${item.description || '-'}</td>
+            <td>${item.category || 'Non catégorisé'}</td>
+            <td>${item.price || 0}€</td>
+            <td>${item.caution || 0}€</td>
+            <td>${item.qty || 0}</td>
+            <td class="available-qty">${available}</td>
+            <td class="reserved-qty">${reserved}</td>
+            <td>${item.location || 'Non spécifié'}</td>
+            <td class="actions">
+              <button onclick="editStock(${item.id})" class="btn-edit">Modifier</button>
+              <button onclick="deleteStock(${item.id})" class="btn-delete">Supprimer</button>
+              <button onclick="showReservations(${item.id})" class="btn-info">Détails</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function getReservedQuantity(itemId) {
+      // Ne prendre en compte que les locations démarrées (ongoing)
+      return locationsData
+        .filter(location => location.itemId === itemId && location.status === 'ongoing')
+        .reduce((sum, location) => sum + (location.qty || 1), 0);
+    }
+
+    function filterStock() {
+      const search = document.getElementById('searchStock').value.toLowerCase();
+      const category = document.getElementById('categoryFilter').value;
+      const availability = document.getElementById('availabilityFilter').value;
+
+      let filtered = stockData.filter(item => {
+        const matchSearch = !search || 
+          item.name.toLowerCase().includes(search) ||
+          (item.description && item.description.toLowerCase().includes(search));
+        
+        const matchCategory = !category || item.category === category;
+        
+        let matchAvailability = true;
+        if (availability) {
+          const reserved = getReservedQuantity(item.id);
+          const available = (item.qty || 0) - reserved;
+          
+          switch (availability) {
+            case 'available':
+              matchAvailability = available > 2;
+              break;
+            case 'partial':
+              matchAvailability = available > 0 && available <= 2;
+              break;
+            case 'unavailable':
+              matchAvailability = available <= 0;
+              break;
+            case 'low':
+              matchAvailability = (item.qty || 0) <= 2;
+              break;
+          }
+        }
+
+        return matchSearch && matchCategory && matchAvailability;
+      });
+
+      // Temporairement remplacer stockData pour l'affichage
+      const originalData = stockData;
+      stockData = filtered;
+      refreshStockTable();
+      stockData = originalData;
+    }
+
+    function editStock(id) {
+      const item = stockData.find(s => s.id === id);
+      if (!item) return;
+
+      editingStockId = id;
+      document.getElementById('editName').value = item.name || '';
+      document.getElementById('editDescription').value = item.description || '';
+      document.getElementById('editPrice').value = item.price || '';
+      document.getElementById('editCaution').value = item.caution || '';
+      document.getElementById('editQty').value = item.qty || '';
+      document.getElementById('editLocation').value = item.location || '';
+      document.getElementById('editCategory').value = item.category || '';
+      
+      document.getElementById('editStockModal').style.display = 'block';
+    }
+
+    function closeEditStockModal() {
+      document.getElementById('editStockModal').style.display = 'none';
+      editingStockId = null;
+    }
+
+    async function updateStock() {
+      if (!editingStockId) return;
+
+      const name = document.getElementById('editName').value;
+      const description = document.getElementById('editDescription').value;
+      const price = parseFloat(document.getElementById('editPrice').value);
+      const caution = parseFloat(document.getElementById('editCaution').value);
+      const qty = parseInt(document.getElementById('editQty').value);
+      const location = document.getElementById('editLocation').value;
+      const category = document.getElementById('editCategory').value;
+
+      try {
+        const response = await fetch(`/stock/${editingStockId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            name, 
+            description, 
+            price, 
+            caution, 
+            qty, 
+            location,
+            category
+          })
+        });
+
+        if (response.ok) {
+          closeEditStockModal();
+          loadAllData();
+        }
+      } catch (error) {
+        console.error('Erreur lors de la mise à jour:', error);
+      }
+    }
+
+    async function deleteStock(id) {
+      if (!confirm('Êtes-vous sûr de vouloir supprimer cet article ?')) return;
+
+      try {
+        const response = await fetch(`/stock/${id}`, { method: 'DELETE' });
+        if (response.ok) {
+          loadAllData();
+        }
+      } catch (error) {
+        console.error('Erreur lors de la suppression:', error);
+      }
+    }
+
+    function showReservations(itemId) {
+      const item = stockData.find(s => s.id === itemId);
+      const reservations = locationsData.filter(l => l.itemId === itemId);
+      
+      let content = `<h4>Réservations pour: ${item.name}</h4>`;
+      
+      if (reservations.length === 0) {
+        content += '<p>Aucune réservation pour cet article</p>';
+      } else {
+        content += '<ul>';
+        reservations.forEach(reservation => {
+          const status = new Date(reservation.to) >= new Date() ? 'active' : 'past';
+          content += `
+            <li class="reservation-item ${status}">
+              <strong>${reservation.clientName}</strong> - 
+              ${reservation.from} → ${reservation.to} 
+              (Quantité: ${reservation.qty || 1})
+              ${status === 'active' ? ' <span class="active-tag">ACTIVE</span>' : ''}
+            </li>
+          `;
+        });
+        content += '</ul>';
+      }
+
+      document.getElementById('reservationDetails').innerHTML = content;
+    }
+
+    function refreshReservationDetails() {
+      const container = document.getElementById('reservationDetails');
+      
+      if (locationsData.length === 0) {
+        container.innerHTML = '<p>Aucune réservation en cours</p>';
+        return;
+      }
+
+      // Filtrer seulement les locations avec statut "planned" (pas encore démarrées)
+      const plannedReservations = locationsData.filter(location => {
+        return !location.status || location.status === 'planned';
+      });
+
+      if (plannedReservations.length === 0) {
+        container.innerHTML = '<p>Aucune réservation prévue</p>';
+        return;
+      }
+
+      let content = '<h4>Réservations prévues (pas encore démarrées)</h4>';
+      const groupedByItem = {};
+      
+      plannedReservations.forEach(reservation => {
+        const item = stockData.find(s => s.id === reservation.itemId);
+        const itemName = item ? item.name : `Article ${reservation.itemId}`;
+        
+        if (!groupedByItem[itemName]) {
+          groupedByItem[itemName] = [];
+        }
+        groupedByItem[itemName].push(reservation);
+      });
+
+      content += '<div class="reservation-groups">';
+      Object.entries(groupedByItem).forEach(([itemName, reservations]) => {
+        content += `
+          <div class="reservation-group">
+            <h5>${itemName}</h5>
+            <ul>
+              ${reservations.map(r => `
+                <li>
+                  <strong>${r.clientName}</strong> - 
+                  ${r.from} → ${r.to} 
+                  (Qté: ${r.qty || 1})
+                </li>
+              `).join('')}
+            </ul>
+          </div>
+        `;
+      });
+      content += '</div>';
+
+      container.innerHTML = content;
+    }
+
+    // Fermer les modales en cliquant à l'extérieur
+    window.onclick = function(event) {
+      const modal = document.getElementById('editStockModal');
+      if (event.target == modal) {
+        closeEditStockModal();
+      }
+    }
+
+    // Charger les données au démarrage
+    loadAllData();
+  </script>
+</body>
+</html>

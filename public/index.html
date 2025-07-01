@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>Dashboard - Gestion des Locations</title>
+  <link href="style.css" rel="stylesheet" />
+</head>
+<body>
+  <nav class="navbar">
+    <div class="navbar-brand">
+      <h1><a href="index.html" style="color: inherit; text-decoration: none;">Location Manager</a></h1>
+    </div>
+    <ul class="navbar-nav">
+      <li><a href="index.html" class="nav-link active">Dashboard</a></li>
+      <li><a href="stock.html" class="nav-link">Gestion Stock</a></li>
+      <li><a href="locations.html" class="nav-link">Gestion Locations</a></li>
+      <li><a href="calendar.html" class="nav-link">Calendrier</a></li>
+      <li><a href="formulaire-location.html" class="nav-link">📝 Demande Public</a></li>
+    </ul>
+  </nav>
+
+  <div class="container">
+    <div class="dashboard-header">
+      <h2>Tableau de bord</h2>
+      <p>Vue d'ensemble de votre activité de location</p>
+    </div>
+
+    <div class="dashboard-stats">
+      <div class="stat-card">
+        <h3>Stock total</h3>
+        <div class="stat-number" id="totalStock">-</div>
+        <p>Articles en stock</p>
+      </div>
+      <div class="stat-card">
+        <h3>Locations actives</h3>
+        <div class="stat-number" id="activeLocations">-</div>
+        <p>Démarrées manuellement</p>
+      </div>
+      <div class="stat-card">
+        <h3>Revenus du mois</h3>
+        <div class="stat-number" id="monthlyRevenue">-€</div>
+        <p>Locations validées</p>
+      </div>
+      <div class="stat-card">
+        <h3>Prochaines échéances</h3>
+        <div class="stat-number" id="upcomingReturns">-</div>
+        <p>Retours en cours</p>
+      </div>
+    </div>
+
+    <div class="dashboard-content">
+      <div class="dashboard-section">
+        <h3>Locations récentes</h3>
+        <div class="recent-list" id="recentLocations">
+          <p>Chargement...</p>
+        </div>
+      </div>
+
+      <div class="dashboard-section">
+        <h3>Stock faible</h3>
+        <div class="low-stock-list" id="lowStockItems">
+          <p>Chargement...</p>
+        </div>
+      </div>
+
+      <div class="dashboard-section">
+        <h3>Actions rapides</h3>
+        <div class="quick-actions">
+          <button class="action-btn" onclick="window.location.href='stock.html'">
+            Ajouter du stock
+          </button>
+          <button class="action-btn" onclick="window.location.href='locations.html'">
+            Nouvelle location
+          </button>
+          <button class="action-btn" onclick="window.location.href='calendar.html'">
+            Voir calendrier
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    async function loadDashboardData() {
+      try {
+        // Charger stock
+        const stockResponse = await fetch('/stock');
+        const stockData = await stockResponse.json();
+        
+        // Charger locations
+        const locationsResponse = await fetch('/locations');
+        const locationsData = await locationsResponse.json();
+
+        updateStats(stockData, locationsData);
+        updateRecentLocations(locationsData);
+        updateLowStock(stockData);
+      } catch (error) {
+        console.error('Erreur lors du chargement des données:', error);
+      }
+    }
+
+    function updateStats(stockData, locationsData) {
+      // Stock total
+      const totalStock = stockData.reduce((sum, item) => sum + (item.qty || 0), 0);
+      document.getElementById('totalStock').textContent = totalStock;
+
+      // Locations actives (statut ongoing uniquement)
+      const activeToday = locationsData.filter(location => {
+        return location.status === 'ongoing';
+      }).length;
+      document.getElementById('activeLocations').textContent = activeToday;
+
+      // Revenus du mois (uniquement locations démarrées - ongoing ou finished)
+      const currentMonth = new Date().getMonth();
+      const currentYear = new Date().getFullYear();
+      const monthlyRevenue = locationsData
+        .filter(location => {
+          const locationDate = new Date(location.from);
+          return (location.status === 'ongoing' || location.status === 'finished') &&
+                 locationDate.getMonth() === currentMonth && 
+                 locationDate.getFullYear() === currentYear;
+        })
+        .reduce((sum, location) => {
+          const stockItem = stockData.find(item => item.id === location.itemId);
+          const price = stockItem ? stockItem.price || 0 : 0;
+          const days = Math.ceil((new Date(location.to) - new Date(location.from)) / (1000 * 60 * 60 * 24)) + 1;
+          return sum + (price * days * (location.qty || 1));
+        }, 0);
+      document.getElementById('monthlyRevenue').textContent = monthlyRevenue.toFixed(0) + '€';
+
+      // Prochaines échéances (retours prévus des locations en cours uniquement)
+      const nextWeek = new Date();
+      nextWeek.setDate(nextWeek.getDate() + 7);
+      const upcomingReturns = locationsData.filter(location => {
+        const returnDate = new Date(location.to);
+        return location.status === 'ongoing' && 
+               returnDate >= new Date() && 
+               returnDate <= nextWeek;
+      }).length;
+      document.getElementById('upcomingReturns').textContent = upcomingReturns;
+    }
+
+    function updateRecentLocations(locationsData) {
+      const recent = locationsData
+        .sort((a, b) => new Date(b.from) - new Date(a.from))
+        .slice(0, 5);
+      
+      const container = document.getElementById('recentLocations');
+      if (recent.length === 0) {
+        container.innerHTML = '<p>Aucune location récente</p>';
+        return;
+      }
+
+      container.innerHTML = recent.map(location => `
+        <div class="recent-item">
+          <strong>${location.clientName}</strong>
+          <span>${location.from} → ${location.to}</span>
+          <span>Article: ${location.itemId}</span>
+        </div>
+      `).join('');
+    }
+
+    function updateLowStock(stockData) {
+      const lowStock = stockData.filter(item => (item.qty || 0) <= 2);
+      
+      const container = document.getElementById('lowStockItems');
+      if (lowStock.length === 0) {
+        container.innerHTML = '<p>Aucun stock faible</p>';
+        return;
+      }
+
+      container.innerHTML = lowStock.map(item => `
+        <div class="low-stock-item">
+          <strong>${item.name}</strong>
+          <span class="qty-warning">Quantité: ${item.qty || 0}</span>
+        </div>
+      `).join('');
+    }
+
+    // Charger les données au chargement de la page
+    loadDashboardData();
+  </script>
+</body>
+</html>

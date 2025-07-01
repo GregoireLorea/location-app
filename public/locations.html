@@ -1,0 +1,1051 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>Gestion Locations - Gestion des Locations</title>
+  <link href="style.css" rel="stylesheet" />
+</head>
+<body>
+  <nav class="navbar">
+    <div class="navbar-brand">
+      <h1><a href="index.html" style="color: inherit; text-decoration: none;">Location Manager</a></h1>
+    </div>
+    <ul class="navbar-nav">
+      <li><a href="index.html" class="nav-link">Dashboard</a></li>
+      <li><a href="stock.html" class="nav-link">Gestion Stock</a></li>
+      <li><a href="locations.html" class="nav-link active">Gestion Locations</a></li>
+      <li><a href="calendar.html" class="nav-link">Calendrier</a></li>
+    </ul>
+  </nav>
+
+  <div class="container">
+    <div class="page-header">
+      <h2>Gestion des Locations</h2>
+      <p>Créez et gérez vos réservations de matériel</p>
+    </div>
+
+    <div class="section">
+      <h3>Nouvelle location</h3>
+      <div class="location-form">
+        <div class="form-section">
+          <h4>Informations client</h4>
+          <div class="form-grid">
+            <input id="clientLastName" placeholder="Nom du client *" required>
+            <input id="clientFirstName" placeholder="Prénom du client *" required>
+            <input id="associationName" placeholder="Nom de l'association">
+            <input id="contactPhone" placeholder="Téléphone de contact *" type="tel" required>
+            <input id="contactEmail" placeholder="Email de contact *" type="email" required>
+            <select id="preferredContact" onchange="toggleMessengerField()">
+              <option value="">Contact préféré *</option>
+              <option value="email">Email</option>
+              <option value="phone">Téléphone</option>
+              <option value="messenger">Messenger</option>
+            </select>
+            <input id="messengerHandle" placeholder="Contact Messenger" style="display: none;">
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h4>Détails de la location</h4>
+          <div class="form-grid">
+            <input id="fromDate" type="date" required>
+            <input id="fromTime" type="time" placeholder="Heure de début">
+            <input id="toDate" type="date" required>
+            <input id="toTime" type="time" placeholder="Heure de fin">
+            <textarea id="requestComment" placeholder="Commentaire sur la demande" rows="3"></textarea>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h4>Matériel à louer</h4>
+          <div id="materialSelection">
+            <div class="material-item">
+              <select class="material-select" onchange="updateMaterialPrice(this)">
+                <option value="">Sélectionner un article</option>
+              </select>
+              <input type="number" class="material-qty" placeholder="Qté" min="1" value="1">
+              <span class="material-price">0€/jour</span>
+              <button type="button" onclick="removeMaterialItem(this)" class="btn-remove">×</button>
+            </div>
+          </div>
+          <button type="button" onclick="addMaterialItem()" class="btn-secondary">Ajouter un article</button>
+        </div>
+
+        <div class="form-section">
+          <h4>Récapitulatif</h4>
+          <div class="booking-summary">
+            <div id="summaryDetails">
+              <p>Sélectionnez du matériel pour voir le récapitulatif</p>
+            </div>
+            <div class="total-cost">
+              <strong>Total: <span id="totalCost">0€</span></strong>
+            </div>
+          </div>
+          <button onclick="createLocation()" class="btn-primary">Confirmer la réservation</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Filtres et recherche</h3>
+      <div class="filter-bar">
+        <input id="searchLocations" placeholder="Rechercher client, article..." onkeyup="filterLocations()">
+        <select id="statusFilter" onchange="filterLocations()">
+          <option value="">Tous les statuts</option>
+          <option value="upcoming">À venir</option>
+          <option value="active">En cours</option>
+          <option value="past">Terminées</option>
+          <option value="overdue">En retard</option>
+        </select>
+        <input id="dateFilter" type="date" onchange="filterLocations()" title="Filtrer par date">
+      </div>
+    </div>
+
+    <!-- Sections d'état des locations -->
+    <div class="section">
+      <h3>Locations prévues</h3>
+      <div class="planned-list" id="plannedLocations">
+        <p>Chargement...</p>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Locations en cours</h3>
+      <div class="ongoing-list" id="ongoingLocations">
+        <p>Chargement...</p>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Locations terminées</h3>
+      <div class="finished-list" id="finishedLocations">
+        <p>Chargement...</p>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Réservations</h3>
+      <div class="locations-table-container">
+        <table class="locations-table" id="locationsTable">
+          <thead>
+            <tr>
+              <th>Client</th>
+              <th>Contact</th>
+              <th>Matériel</th>
+              <th>Dates</th>
+              <th>Durée</th>
+              <th>Total</th>
+              <th>Statut</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="locationsTableBody">
+            <tr>
+              <td colspan="8">Chargement...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal d'édition de location -->
+  <div id="editLocationModal" class="modal">
+    <div class="modal-content modal-large">
+      <span class="close" onclick="closeEditLocationModal()">&times;</span>
+      <h3>Modifier la réservation</h3>
+      <div class="location-form">
+        <div class="form-section">
+          <h4>Informations client</h4>
+          <div class="form-grid">
+            <input id="editClientLastName" placeholder="Nom du client">
+            <input id="editClientFirstName" placeholder="Prénom du client">
+            <input id="editAssociationName" placeholder="Nom de l'association">
+            <input id="editContactPhone" placeholder="Téléphone de contact" type="tel">
+            <input id="editContactEmail" placeholder="Email de contact" type="email">
+            <select id="editPreferredContact" onchange="toggleEditMessengerField()">
+              <option value="">Contact préféré</option>
+              <option value="email">Email</option>
+              <option value="phone">Téléphone</option>
+              <option value="messenger">Messenger</option>
+            </select>
+            <input id="editMessengerHandle" placeholder="Contact Messenger" style="display: none;">
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h4>Détails de la location</h4>
+          <div class="form-grid">
+            <input id="editFromDate" type="date">
+            <input id="editFromTime" type="time">
+            <input id="editToDate" type="date">
+            <input id="editToTime" type="time">
+            <textarea id="editRequestComment" placeholder="Commentaire sur la demande" rows="3"></textarea>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h4>Matériel</h4>
+          <div id="editMaterialSelection">
+            <!-- Sera rempli dynamiquement -->
+          </div>
+          <button type="button" onclick="addEditMaterialItem()" class="btn-secondary">Ajouter un article</button>
+        </div>
+
+        <div class="form-actions">
+          <button onclick="updateLocation()" class="btn-primary">Mettre à jour</button>
+          <button onclick="closeEditLocationModal()" class="btn-secondary">Annuler</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal pour démarrer une location avec QR code -->
+  <div id="startLocationModal" class="modal">
+    <div class="modal-content">
+      <span class="close" onclick="closeStartLocationModal()">&times;</span>
+      <h3>Démarrer la location</h3>
+      
+      <div class="payment-info">
+        <div class="client-summary">
+          <h4>Résumé de la location</h4>
+          <div id="locationSummary"></div>
+        </div>
+        
+        <div class="payment-section">
+          <h4>Paiement requis</h4>
+          <div class="payment-details">
+            <div class="payment-amount">
+              <span>Solde location + Caution : </span>
+              <strong id="totalAmount">0€</strong>
+            </div>
+            <div class="bank-details">
+              <p><strong>IBAN :</strong> BE86 3631 9821 5193</p>
+              <p><strong>Communication :</strong> <span id="paymentReference"></span></p>
+            </div>
+          </div>
+          
+          <div class="qr-code-section">
+            <h5>QR Code pour paiement mobile :</h5>
+            <div id="qrCode" style="text-align: center; margin: 1rem 0;"></div>
+          </div>
+        </div>
+        
+        <div class="form-actions">
+          <button onclick="confirmStartLocation()" class="btn-primary">Confirmer le démarrage</button>
+          <button onclick="closeStartLocationModal()" class="btn-secondary">Annuler</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/qr-code-styling@1.5.0/lib/qr-code-styling.js"></script>
+  <script>
+    let stockData = [];
+    let locationsData = [];
+    let editingLocationId = null;
+    let currentLocationToStart = null;
+
+    async function loadAllData() {
+      console.log('Chargement des données...');
+      try {
+        const [stockResponse, locationsResponse] = await Promise.all([
+          fetch('/stock'),
+          fetch('/locations')
+        ]);
+        
+        console.log('Réponses reçues:', stockResponse.status, locationsResponse.status);
+        
+        stockData = await stockResponse.json();
+        locationsData = await locationsResponse.json();
+        
+        console.log('Données chargées:', { stockData, locationsData });
+        
+        populateMaterialSelects();
+        refreshLocationsTable();
+        updateSummary();
+        updatePlannedOngoingFinished();
+      } catch (error) {
+        console.error('Erreur lors du chargement:', error);
+      }
+    }
+
+    function populateMaterialSelects() {
+      const selects = document.querySelectorAll('.material-select');
+      const options = stockData.map(item => 
+        `<option value="${item.id}" data-price="${item.price || 0}">${item.name} (${item.price || 0}€/jour)</option>`
+      ).join('');
+
+      selects.forEach(select => {
+        const currentValue = select.value;
+        select.innerHTML = '<option value="">Sélectionner un article</option>' + options;
+        if (currentValue) select.value = currentValue;
+      });
+    }
+
+    function addMaterialItem() {
+      const container = document.getElementById('materialSelection');
+      const itemDiv = document.createElement('div');
+      itemDiv.className = 'material-item';
+      itemDiv.innerHTML = `
+        <select class="material-select" onchange="updateMaterialPrice(this)">
+          <option value="">Sélectionner un article</option>
+          ${stockData.map(item => 
+            `<option value="${item.id}" data-price="${item.price || 0}">${item.name} (${item.price || 0}€/jour)</option>`
+          ).join('')}
+        </select>
+        <input type="number" class="material-qty" placeholder="Qté" min="1" value="1" onchange="updateSummary()">
+        <span class="material-price">0€/jour</span>
+        <button type="button" onclick="removeMaterialItem(this)" class="btn-remove">×</button>
+      `;
+      container.appendChild(itemDiv);
+    }
+
+    function removeMaterialItem(button) {
+      button.parentElement.remove();
+      updateSummary();
+    }
+
+    function updateMaterialPrice(select) {
+      const priceSpan = select.parentElement.querySelector('.material-price');
+      const selectedOption = select.options[select.selectedIndex];
+      const price = selectedOption.dataset.price || 0;
+      priceSpan.textContent = price + '€/jour';
+      updateSummary();
+    }
+
+    function updateSummary() {
+      const fromDate = document.getElementById('fromDate').value;
+      const toDate = document.getElementById('toDate').value;
+      
+      if (!fromDate || !toDate) {
+        document.getElementById('summaryDetails').innerHTML = '<p>Sélectionnez des dates pour voir le récapitulatif</p>';
+        document.getElementById('totalCost').textContent = '0€';
+        return;
+      }
+
+      const days = Math.ceil((new Date(toDate) - new Date(fromDate)) / (1000 * 60 * 60 * 24)) + 1;
+      
+      const materials = [];
+      let totalCost = 0;
+
+      document.querySelectorAll('.material-item').forEach(item => {
+        const select = item.querySelector('.material-select');
+        const qtyInput = item.querySelector('.material-qty');
+        
+        if (select.value && qtyInput.value) {
+          const selectedOption = select.options[select.selectedIndex];
+          const price = parseFloat(selectedOption.dataset.price) || 0;
+          const qty = parseInt(qtyInput.value) || 1;
+          const itemCost = price * qty * days;
+          
+          materials.push({
+            name: selectedOption.text.split(' (')[0],
+            qty: qty,
+            pricePerDay: price,
+            totalCost: itemCost
+          });
+          
+          totalCost += itemCost;
+        }
+      });
+
+      let summaryHTML = `<p><strong>Durée:</strong> ${days} jour(s)</p>`;
+      if (materials.length > 0) {
+        summaryHTML += '<ul>';
+        materials.forEach(mat => {
+          summaryHTML += `<li>${mat.name} x${mat.qty} - ${mat.totalCost.toFixed(2)}€</li>`;
+        });
+        summaryHTML += '</ul>';
+      }
+
+      document.getElementById('summaryDetails').innerHTML = summaryHTML;
+      document.getElementById('totalCost').textContent = totalCost.toFixed(2) + '€';
+    }
+
+    async function createLocation() {
+      const clientLastName = document.getElementById('clientLastName').value;
+      const clientFirstName = document.getElementById('clientFirstName').value;
+      const associationName = document.getElementById('associationName').value;
+      const contactPhone = document.getElementById('contactPhone').value;
+      const contactEmail = document.getElementById('contactEmail').value;
+      const preferredContact = document.getElementById('preferredContact').value;
+      const messengerHandle = document.getElementById('messengerHandle').value;
+      const fromDate = document.getElementById('fromDate').value;
+      const fromTime = document.getElementById('fromTime').value;
+      const toDate = document.getElementById('toDate').value;
+      const toTime = document.getElementById('toTime').value;
+      const requestComment = document.getElementById('requestComment').value;
+
+      if (!clientLastName || !clientFirstName || !contactPhone || !contactEmail || !preferredContact || !fromDate || !toDate) {
+        alert('Veuillez remplir tous les champs obligatoires');
+        return;
+      }
+
+      // Combiner nom et prénom pour créer le nom complet
+      const clientName = `${clientFirstName} ${clientLastName}`;
+
+      // Collecter le matériel sélectionné
+      const materials = [];
+      document.querySelectorAll('.material-item').forEach(item => {
+        const select = item.querySelector('.material-select');
+        const qtyInput = item.querySelector('.material-qty');
+        
+        if (select.value && qtyInput.value) {
+          materials.push({
+            itemId: parseInt(select.value),
+            qty: parseInt(qtyInput.value) || 1
+          });
+        }
+      });
+
+      if (materials.length === 0) {
+        alert('Veuillez sélectionner au moins un article');
+        return;
+      }
+
+      try {
+        // Pour le moment, créer une location pour chaque article (compatibilité avec l'API actuelle)
+        for (const material of materials) {
+          const response = await fetch('/locations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              clientName,
+              clientLastName,
+              clientFirstName,
+              associationName,
+              contactPhone,
+              contactEmail,
+              preferredContact,
+              messengerHandle,
+              itemId: material.itemId,
+              qty: material.qty,
+              from: fromDate,
+              fromTime,
+              to: toDate,
+              toTime,
+              requestComment
+            })
+          });
+
+          if (!response.ok) {
+            throw new Error('Erreur lors de la création de la réservation');
+          }
+        }
+
+        // Réinitialiser le formulaire
+        resetLocationForm();
+        loadAllData();
+        alert('Réservation créée avec succès !');
+      } catch (error) {
+        console.error('Erreur lors de la création:', error);
+        alert('Erreur lors de la création de la réservation');
+      }
+    }
+
+    function resetLocationForm() {
+      document.getElementById('clientLastName').value = '';
+      document.getElementById('clientFirstName').value = '';
+      document.getElementById('associationName').value = '';
+      document.getElementById('contactPhone').value = '';
+      document.getElementById('contactEmail').value = '';
+      document.getElementById('preferredContact').value = '';
+      document.getElementById('messengerHandle').value = '';
+      document.getElementById('fromDate').value = '';
+      document.getElementById('fromTime').value = '';
+      document.getElementById('toDate').value = '';
+      document.getElementById('toTime').value = '';
+      document.getElementById('requestComment').value = '';
+      
+      // Réinitialiser la visibilité du champ Messenger
+      toggleMessengerField();
+      
+      // Garder seulement le premier item de matériel
+      const container = document.getElementById('materialSelection');
+      const items = container.querySelectorAll('.material-item');
+      for (let i = 1; i < items.length; i++) {
+        items[i].remove();
+      }
+      if (items.length > 0) {
+        items[0].querySelector('.material-select').value = '';
+        items[0].querySelector('.material-qty').value = '1';
+        items[0].querySelector('.material-price').textContent = '0€/jour';
+      }
+      
+      updateSummary();
+    }
+
+    function refreshLocationsTable() {
+      const tbody = document.getElementById('locationsTableBody');
+      
+      // Vérifier que les données sont chargées
+      if (!locationsData || !stockData) {
+        tbody.innerHTML = '<tr><td colspan="8">Chargement...</td></tr>';
+        return;
+      }
+      
+      if (locationsData.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8">Aucune réservation</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = locationsData.map(location => {
+        const item = stockData.find(s => s.id === location.itemId);
+        const itemName = item ? item.name : `Article ${location.itemId}`;
+        
+        const fromDate = new Date(location.from);
+        const toDate = new Date(location.to);
+        
+        let status = 'past';
+        let statusText = 'Terminée';
+        
+        // Utiliser le statut réel de la location au lieu des dates
+        if (location.status === 'planned') {
+          status = 'upcoming';
+          statusText = 'Prévue';
+        } else if (location.status === 'ongoing') {
+          status = 'active';
+          statusText = 'En cours';
+        } else if (location.status === 'finished') {
+          status = 'past';
+          statusText = 'Terminée';
+        }
+
+        const days = Math.ceil((toDate - fromDate) / (1000 * 60 * 60 * 24)) + 1;
+        const price = item ? item.price || 0 : 0;
+        const total = price * (location.qty || 1) * days;
+
+        const contactInfo = [
+          location.contactPhone && `📞 ${location.contactPhone}`,
+          location.contactEmail && `✉️ ${location.contactEmail}`,
+          location.messengerHandle && `💬 ${location.messengerHandle}`
+        ].filter(Boolean).join('<br>');
+
+        return `
+          <tr class="status-${status}">
+            <td>
+              <strong>${location.clientName}</strong>
+              ${location.associationName ? `<br><small>${location.associationName}</small>` : ''}
+            </td>
+            <td>
+              ${contactInfo || 'Non renseigné'}
+              ${location.preferredContact ? `<br><small>Préfère: ${location.preferredContact}</small>` : ''}
+            </td>
+            <td>
+              ${itemName}
+              <br><small>Qté: ${location.qty || 1}</small>
+            </td>
+            <td>
+              ${location.from}${location.fromTime ? ` ${location.fromTime}` : ''}<br>→ ${location.to}${location.toTime ? ` ${location.toTime}` : ''}
+            </td>
+            <td>${days} jour(s)</td>
+            <td>${total.toFixed(2)}€</td>
+            <td><span class="status-badge status-${status}">${statusText}</span></td>
+            <td class="actions">
+              <button onclick="editLocation(${location.id})" class="btn-edit">Modifier</button>
+              <button onclick="deleteLocation(${location.id})" class="btn-delete">Supprimer</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function filterLocations() {
+      const search = document.getElementById('searchLocations').value.toLowerCase();
+      const status = document.getElementById('statusFilter').value;
+      const dateFilter = document.getElementById('dateFilter').value;
+
+      let filtered = locationsData.filter(location => {
+        const item = stockData.find(s => s.id === location.itemId);
+        const itemName = item ? item.name : `Article ${location.itemId}`;
+        
+        const matchSearch = !search || 
+          location.clientName.toLowerCase().includes(search) ||
+          itemName.toLowerCase().includes(search) ||
+          (location.associationName && location.associationName.toLowerCase().includes(search)) ||
+          (location.requestComment && location.requestComment.toLowerCase().includes(search));
+        
+        let matchStatus = true;
+        if (status) {
+          switch (status) {
+            case 'upcoming':
+              matchStatus = location.status === 'planned';
+              break;
+            case 'active':
+              matchStatus = location.status === 'ongoing';
+              break;
+            case 'past':
+              matchStatus = location.status === 'finished';
+              break;
+            case 'overdue':
+              // Pour les locations en retard, on garde l'ancienne logique temporairement
+              const today = new Date();
+              today.setHours(0, 0, 0, 0);
+              const toDate = new Date(location.to);
+              matchStatus = location.status === 'ongoing' && toDate < today;
+              break;
+          }
+        }
+
+        const matchDate = !dateFilter || 
+          location.from <= dateFilter && location.to >= dateFilter;
+
+        return matchSearch && matchStatus && matchDate;
+      });
+
+      // Temporairement remplacer locationsData pour l'affichage
+      const originalData = locationsData;
+      locationsData = filtered;
+      refreshLocationsTable();
+      locationsData = originalData;
+    }
+
+    function editLocation(id) {
+      const location = locationsData.find(l => l.id === id);
+      if (!location) return;
+
+      editingLocationId = id;
+      
+      document.getElementById('editClientLastName').value = location.clientLastName || '';
+      document.getElementById('editClientFirstName').value = location.clientFirstName || '';
+      document.getElementById('editAssociationName').value = location.associationName || '';
+      document.getElementById('editContactPhone').value = location.contactPhone || '';
+      document.getElementById('editContactEmail').value = location.contactEmail || '';
+      document.getElementById('editPreferredContact').value = location.preferredContact || '';
+      document.getElementById('editMessengerHandle').value = location.messengerHandle || '';
+      document.getElementById('editFromDate').value = location.from || '';
+      document.getElementById('editFromTime').value = location.fromTime || '';
+      document.getElementById('editToDate').value = location.to || '';
+      document.getElementById('editToTime').value = location.toTime || '';
+      document.getElementById('editRequestComment').value = location.requestComment || '';
+      
+      // Mettre à jour la visibilité du champ Messenger
+      toggleEditMessengerField();
+      
+      // Pour le matériel, on ne peut modifier qu'un seul item pour l'instant
+      const editContainer = document.getElementById('editMaterialSelection');
+      editContainer.innerHTML = `
+        <div class="material-item">
+          <select class="material-select">
+            <option value="">Sélectionner un article</option>
+            ${stockData.map(item => 
+              `<option value="${item.id}" ${item.id === location.itemId ? 'selected' : ''} data-price="${item.price || 0}">
+                ${item.name} (${item.price || 0}€/jour)
+              </option>`
+            ).join('')}
+          </select>
+          <input type="number" class="material-qty" placeholder="Qté" min="1" value="${location.qty || 1}">
+          <span class="material-price">${stockData.find(s => s.id === location.itemId)?.price || 0}€/jour</span>
+        </div>
+      `;
+      
+      document.getElementById('editLocationModal').style.display = 'block';
+    }
+
+    function closeEditLocationModal() {
+      document.getElementById('editLocationModal').style.display = 'none';
+      editingLocationId = null;
+    }
+
+    async function updateLocation() {
+      if (!editingLocationId) return;
+
+      const clientLastName = document.getElementById('editClientLastName').value;
+      const clientFirstName = document.getElementById('editClientFirstName').value;
+      const associationName = document.getElementById('editAssociationName').value;
+      const contactPhone = document.getElementById('editContactPhone').value;
+      const contactEmail = document.getElementById('editContactEmail').value;
+      const preferredContact = document.getElementById('editPreferredContact').value;
+      const messengerHandle = document.getElementById('editMessengerHandle').value;
+      const fromDate = document.getElementById('editFromDate').value;
+      const fromTime = document.getElementById('editFromTime').value;
+      const toDate = document.getElementById('editToDate').value;
+      const toTime = document.getElementById('editToTime').value;
+      const requestComment = document.getElementById('editRequestComment').value;
+
+      const materialSelect = document.querySelector('#editMaterialSelection .material-select');
+      const materialQty = document.querySelector('#editMaterialSelection .material-qty');
+      const itemId = parseInt(materialSelect.value);
+      const qty = parseInt(materialQty.value) || 1;
+
+      // Combiner nom et prénom
+      const clientName = `${clientFirstName} ${clientLastName}`;
+
+      try {
+        const response = await fetch(`/locations/${editingLocationId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            clientName,
+            clientLastName,
+            clientFirstName,
+            associationName,
+            contactPhone,
+            contactEmail,
+            preferredContact,
+            messengerHandle,
+            itemId,
+            qty,
+            from: fromDate,
+            fromTime,
+            to: toDate,
+            toTime,
+            requestComment
+          })
+        });
+
+        if (response.ok) {
+          closeEditLocationModal();
+          loadAllData();
+        }
+      } catch (error) {
+        console.error('Erreur lors de la mise à jour:', error);
+      }
+    }
+
+    async function deleteLocation(id) {
+      if (!confirm('Êtes-vous sûr de vouloir supprimer cette réservation ?')) return;
+
+      try {
+        const response = await fetch(`/locations/${id}`, { method: 'DELETE' });
+        if (response.ok) {
+          loadAllData();
+        }
+      } catch (error) {
+        console.error('Erreur lors de la suppression:', error);
+      }
+    }
+
+    function toggleMessengerField() {
+      const preferredContact = document.getElementById('preferredContact').value;
+      const messengerField = document.getElementById('messengerHandle');
+      messengerField.style.display = preferredContact === 'messenger' ? 'block' : 'none';
+      if (preferredContact !== 'messenger') {
+        messengerField.value = '';
+      }
+    }
+
+    function toggleEditMessengerField() {
+      const preferredContact = document.getElementById('editPreferredContact').value;
+      const messengerField = document.getElementById('editMessengerHandle');
+      messengerField.style.display = preferredContact === 'messenger' ? 'block' : 'none';
+      if (preferredContact !== 'messenger') {
+        messengerField.value = '';
+      }
+    }
+
+    // Gérer l'affichage du champ Messenger
+    const preferredContactElement = document.getElementById('preferredContact');
+    if (preferredContactElement) {
+      preferredContactElement.addEventListener('change', function() {
+        const messengerField = document.getElementById('messengerHandle');
+        if (messengerField) {
+          messengerField.style.display = this.value === 'messenger' ? 'block' : 'none';
+        }
+      });
+    }
+
+    // Gérer les changements de dates pour le récapitulatif
+    const fromDateElement = document.getElementById('fromDate');
+    const toDateElement = document.getElementById('toDate');
+    
+    if (fromDateElement) {
+      fromDateElement.addEventListener('change', updateSummary);
+    }
+    if (toDateElement) {
+      toDateElement.addEventListener('change', updateSummary);
+    }
+
+    // Fermer les modales en cliquant à l'extérieur
+    window.onclick = function(event) {
+      const editModal = document.getElementById('editLocationModal');
+      const startModal = document.getElementById('startLocationModal');
+      
+      if (event.target == editModal) {
+        closeEditLocationModal();
+      }
+      if (event.target == startModal) {
+        closeStartLocationModal();
+      }
+    }
+
+    function addEditMaterialItem() {
+      const container = document.getElementById('editMaterialSelection');
+      const itemDiv = document.createElement('div');
+      itemDiv.className = 'material-item';
+      itemDiv.innerHTML = `
+        <select class="material-select">
+          <option value="">Sélectionner un article</option>
+          ${stockData.map(item => 
+            `<option value="${item.id}" data-price="${item.price || 0}">${item.name} (${item.price || 0}€/jour)</option>`
+          ).join('')}
+        </select>
+        <input type="number" class="material-qty" placeholder="Qté" min="1" value="1">
+        <span class="material-price">0€/jour</span>
+        <button type="button" onclick="removeEditMaterialItem(this)" class="btn-remove">×</button>
+      `;
+      container.appendChild(itemDiv);
+    }
+
+    function removeEditMaterialItem(button) {
+      button.parentElement.remove();
+    }
+
+    function updatePlannedOngoingFinished() {
+      if (!locationsData) return;
+      
+      // Filtrer uniquement par statut, pas par dates
+      const planned = locationsData.filter(l => !l.status || l.status === 'planned');
+      const ongoing = locationsData.filter(l => l.status === 'ongoing');
+      const finished = locationsData.filter(l => l.status === 'finished');
+
+      // Locations prévues
+      const plannedContainer = document.getElementById('plannedLocations');
+      if (planned.length === 0) {
+        plannedContainer.innerHTML = '<p>Aucune location prévue</p>';
+      } else {
+        plannedContainer.innerHTML = planned.map(l => {
+          const stockItem = stockData.find(s => s.id === l.itemId);
+          const itemName = stockItem ? stockItem.name : `Article ${l.itemId}`;
+          return `
+            <div class="status-item planned-item">
+              <div class="item-info">
+                <strong>${l.clientName}</strong>
+                <span class="dates">${l.from}${l.fromTime ? ` ${l.fromTime}` : ''} → ${l.to}${l.toTime ? ` ${l.toTime}` : ''}</span>
+                <span class="material">Article: ${itemName} (Qté: ${l.qty || 1})</span>
+                ${l.associationName ? `<span class="association">Association: ${l.associationName}</span>` : ''}
+                ${l.requestComment ? `<span class="comment">Commentaire: ${l.requestComment}</span>` : ''}
+              </div>
+              <div class="item-actions">
+                <button class="btn-warning" onclick="startLocation(${l.id})">💰 Démarrer & Payer</button>
+                <button class="btn-edit" onclick="editLocation(${l.id})">✏️ Modifier</button>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      // Locations en cours
+      const ongoingContainer = document.getElementById('ongoingLocations');
+      if (ongoing.length === 0) {
+        ongoingContainer.innerHTML = '<p>Aucune location en cours</p>';
+      } else {
+        ongoingContainer.innerHTML = ongoing.map(l => {
+          const stockItem = stockData.find(s => s.id === l.itemId);
+          const itemName = stockItem ? stockItem.name : `Article ${l.itemId}`;
+          const days = Math.ceil((new Date(l.to) - new Date(l.from)) / (1000 * 60 * 60 * 24)) + 1;
+          const price = stockItem ? stockItem.price || 0 : 0;
+          const total = price * (l.qty || 1) * days;
+          return `
+            <div class="status-item ongoing-item">
+              <div class="item-info">
+                <strong>${l.clientName}</strong>
+                <span class="dates">${l.from}${l.fromTime ? ` ${l.fromTime}` : ''} → ${l.to}${l.toTime ? ` ${l.toTime}` : ''}</span>
+                <span class="material">Article: ${itemName} (Qté: ${l.qty || 1}) - ${total}€</span>
+                ${l.associationName ? `<span class="association">Association: ${l.associationName}</span>` : ''}
+                ${l.requestComment ? `<span class="comment">Commentaire: ${l.requestComment}</span>` : ''}
+              </div>
+              <div class="item-actions">
+                <button class="btn-info" onclick="finishLocation(${l.id})">✅ Terminer</button>
+                <button class="btn-edit" onclick="editLocation(${l.id})">✏️ Modifier</button>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      // Locations terminées
+      const finishedContainer = document.getElementById('finishedLocations');
+      if (finished.length === 0) {
+        finishedContainer.innerHTML = '<p>Aucune location terminée</p>';
+      } else {
+        finishedContainer.innerHTML = finished.map(l => {
+          const stockItem = stockData.find(s => s.id === l.itemId);
+          const itemName = stockItem ? stockItem.name : `Article ${l.itemId}`;
+          return `
+            <div class="status-item finished-item">
+              <div class="item-info">
+                <strong>${l.clientName}</strong>
+                <span class="dates">${l.from} → ${l.to}</span>
+                <span class="material">Article: ${itemName}</span>
+              </div>
+              <button class="action-btn btn-danger" onclick="deleteLocation(${l.id})">Supprimer</button>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+
+    function startLocation(locationId) {
+      console.log('startLocation appelée avec ID:', locationId);
+      
+      const location = locationsData.find(l => l.id === locationId);
+      if (!location) {
+        console.error('Location non trouvée:', locationId);
+        alert('Erreur: Réservation non trouvée');
+        return;
+      }
+      
+      console.log('Location trouvée:', location);
+      currentLocationToStart = locationId;
+      
+      // Trouver l'article correspondant
+      const item = stockData.find(s => s.id === location.itemId);
+      if (!item) {
+        console.error('Article non trouvé:', location.itemId);
+        alert('Erreur: Article non trouvé dans le stock');
+        return;
+      }
+      
+      console.log('Article trouvé:', item);
+
+      // Calculer les montants
+      const days = Math.ceil((new Date(location.to) - new Date(location.from)) / (1000 * 60 * 60 * 24)) + 1;
+      const locationCost = (item.price || 0) * (location.qty || 1) * days;
+      const cautionCost = (item.caution || 0) * (location.qty || 1);
+      const totalAmount = locationCost + cautionCost;
+      
+      console.log('Calculs:', { days, locationCost, cautionCost, totalAmount });
+
+      // Créer la référence de paiement (max 140 caractères pour SEPA)
+      const clientRef = `${location.clientLastName || 'CLIENT'} ${location.clientFirstName || 'PRENOM'}`.substring(0, 30);
+      const itemRef = item.name.substring(0, 20);
+      const paymentRef = `${clientRef} - ${itemRef} - ${locationCost}€+${cautionCost}€ caution`;
+      
+      console.log('Référence de paiement:', paymentRef);
+
+      // Mettre à jour le modal
+      document.getElementById('locationSummary').innerHTML = `
+        <p><strong>Client :</strong> ${location.clientName}</p>
+        <p><strong>Article :</strong> ${item.name} x${location.qty || 1}</p>
+        <p><strong>Période :</strong> ${location.from} au ${location.to} (${days} jour${days > 1 ? 's' : ''})</p>
+        <p><strong>Solde location :</strong> ${locationCost}€</p>
+        <p><strong>Caution :</strong> ${cautionCost}€</p>
+      `;
+      
+      document.getElementById('totalAmount').textContent = totalAmount + '€';
+      document.getElementById('paymentReference').textContent = paymentRef;
+
+      // Générer le QR code pour paiement mobile
+      // Format EXACT de votre exemple qui fonctionne
+      const bic = "BBRUBEBB"; // BIC optionnel 
+      const beneficiaryName = "Location Manager"; // Nom du bénéficiaire
+      const iban = "BE98363198215193"; // IBAN du bénéficiaire
+      const amount = totalAmount.toFixed(2); // Format: 40.00 (sans EUR ici)
+      const communication = paymentRef; // Communication libre
+      
+      // Format EXACT de votre exemple qui fonctionne
+      const qrData = `BCD\n002\n1\nSCT\n${bic}\n${beneficiaryName}\n${iban}\nEUR${amount}\n\n\n${communication}\nGénéré par Location Manager`;
+      
+      console.log('Données QR code SEPA standard:', qrData);
+      
+      const qrContainer = document.getElementById('qrCode');
+      if (!qrContainer) {
+        console.error('Conteneur QR code non trouvé');
+        alert('Erreur: Élément QR code manquant');
+        return;
+      }
+      
+      qrContainer.innerHTML = ''; // Vider le conteneur
+      
+      try {
+        // Utiliser QRCodeStyling
+        if (typeof QRCodeStyling === 'undefined') {
+          console.error('Bibliothèque QRCodeStyling non chargée');
+          qrContainer.innerHTML = '<p style="color: red;">Bibliothèque QRCodeStyling non disponible</p>';
+        } else {
+          const qrCode = new QRCodeStyling({
+            width: 200,
+            height: 200,
+            type: "svg",
+            data: qrData,
+            dotsOptions: {
+              color: "#000000",
+              type: "rounded"
+            },
+            backgroundOptions: {
+              color: "#ffffff",
+            },
+            imageOptions: {
+              margin: 10,
+            }
+          });
+
+          qrCode.append(qrContainer);
+          console.log('QR code généré avec succès');
+        }
+      } catch (error) {
+        console.error('Erreur génération QR code:', error);
+        qrContainer.innerHTML = '<p style="color: red;">Erreur génération QR code: ' + error.message + '</p>';
+      }
+
+      // Afficher le modal
+      console.log('Affichage du modal');
+      document.getElementById('startLocationModal').style.display = 'block';
+    }
+
+    function closeStartLocationModal() {
+      document.getElementById('startLocationModal').style.display = 'none';
+      currentLocationToStart = null;
+    }
+
+    async function confirmStartLocation() {
+      if (!currentLocationToStart) {
+        alert('Erreur: Aucune location sélectionnée');
+        return;
+      }
+      
+      console.log('Confirmation démarrage pour location:', currentLocationToStart);
+
+      try {
+        const response = await fetch(`/locations/${currentLocationToStart}/start`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' }
+        });
+
+        console.log('Réponse serveur:', response);
+
+        if (response.ok) {
+          const result = await response.json();
+          console.log('Résultat:', result);
+          closeStartLocationModal();
+          loadAllData();
+          alert('Location démarrée avec succès !');
+        } else {
+          const errorText = await response.text();
+          console.error('Erreur serveur:', response.status, errorText);
+          alert(`Erreur lors du démarrage de la location: ${response.status} - ${errorText}`);
+        }
+      } catch (error) {
+        console.error('Erreur réseau:', error);
+        alert('Erreur réseau lors du démarrage de la location');
+      }
+    }
+
+    async function finishLocation(locationId) {
+      if (!confirm('Êtes-vous sûr de vouloir terminer cette location ?')) return;
+      
+      try {
+        const response = await fetch(`/locations/${locationId}/finish`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (response.ok) {
+          loadAllData();
+          alert('Location terminée avec succès !');
+        } else {
+          alert('Erreur lors de la finalisation de la location');
+        }
+      } catch (error) {
+        console.error('Erreur:', error);
+        alert('Erreur lors de la finalisation de la location');
+      }
+    }
+
+    // Charger les données au démarrage
+    loadAllData();
+  </script>
+</body>
+</html>

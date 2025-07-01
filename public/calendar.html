@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>Calendrier - Gestion des Locations</title>
+  <link href="style.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.css" rel="stylesheet" />
+</head>
+<body>
+  <nav class="navbar">
+    <div class="navbar-brand">
+      <h1><a href="index.html" style="color: inherit; text-decoration: none;">Location Manager</a></h1>
+    </div>
+    <ul class="navbar-nav">
+      <li><a href="index.html" class="nav-link">Dashboard</a></li>
+      <li><a href="stock.html" class="nav-link">Gestion Stock</a></li>
+      <li><a href="locations.html" class="nav-link">Gestion Locations</a></li>
+      <li><a href="calendar.html" class="nav-link active">Calendrier</a></li>
+    </ul>
+  </nav>
+
+  <div class="container">
+    <div class="page-header">
+      <h2>Calendrier des réservations</h2>
+      <p>Visualisez toutes vos locations dans le temps</p>
+    </div>
+
+    <div class="calendar-controls">
+      <div class="filter-section">
+        <select id="itemFilter">
+          <option value="">Tous les articles</option>
+        </select>
+        <select id="statusFilter">
+          <option value="">Tous les statuts</option>
+          <option value="upcoming">À venir</option>
+          <option value="active">En cours</option>
+          <option value="past">Terminées</option>
+        </select>
+        <button onclick="refreshCalendar()" class="btn-secondary">Actualiser</button>
+      </div>
+      
+      <div class="legend">
+        <div class="legend-item">
+          <span class="legend-color upcoming"></span>
+          <span>À venir</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-color active"></span>
+          <span>En cours</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-color past"></span>
+          <span>Terminé</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div id="calendar"></div>
+    </div>
+
+    <div class="section">
+      <h3>Planning détaillé</h3>
+      <div id="detailedPlanning" class="detailed-planning">
+        <p>Chargement du planning...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de détail d'événement -->
+  <div id="eventModal" class="modal">
+    <div class="modal-content">
+      <span class="close" onclick="closeEventModal()">&times;</span>
+      <div id="eventDetails">
+        <!-- Sera rempli dynamiquement -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Chargement de FullCalendar à la fin pour éviter les conflits -->
+  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
+  <script>
+    console.log("Script JavaScript chargé !");
+    let globalCalendar = null;
+    let stockData = [];
+    let locationsData = [];
+
+    async function loadAllData() {
+      try {
+        const [stockResponse, locationsResponse] = await Promise.all([
+          fetch('/stock'),
+          fetch('/locations')
+        ]);
+        
+        stockData = await stockResponse.json();
+        locationsData = await locationsResponse.json();
+        
+        populateItemFilter();
+        refreshCalendar();
+        updateDetailedPlanning();
+      } catch (error) {
+        console.error('Erreur lors du chargement:', error);
+      }
+    }
+
+    function populateItemFilter() {
+      const filter = document.getElementById('itemFilter');
+      const options = stockData.map(item => 
+        `<option value="${item.id}">${item.name}</option>`
+      ).join('');
+      filter.innerHTML = '<option value="">Tous les articles</option>' + options;
+    }
+
+    function initializeCalendar() {
+      const calendarEl = document.getElementById('calendar');
+      
+      globalCalendar = new FullCalendar.Calendar(calendarEl, {
+        initialView: 'dayGridMonth',
+        locale: 'fr',
+        headerToolbar: {
+          left: 'prev,next today',
+          center: 'title',
+          right: 'dayGridMonth,timeGridWeek,listWeek'
+        },
+        events: [],
+        eventClick: function(info) {
+          showEventDetails(info.event);
+        },
+        height: 'auto',
+        eventDisplay: 'block',
+        dayMaxEvents: 3,
+        moreLinkClick: 'popover'
+      });
+      
+      globalCalendar.render();
+    }
+
+    function refreshCalendar() {
+      if (!globalCalendar) return;
+
+      const itemFilter = document.getElementById('itemFilter').value;
+      const statusFilter = document.getElementById('statusFilter').value;
+      
+      let filteredLocations = locationsData;
+      
+      if (itemFilter) {
+        filteredLocations = filteredLocations.filter(loc => loc.itemId.toString() === itemFilter);
+      }
+      
+      if (statusFilter) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        filteredLocations = filteredLocations.filter(location => {
+          const fromDate = new Date(location.from);
+          const toDate = new Date(location.to);
+          
+          switch (statusFilter) {
+            case 'upcoming':
+              return fromDate > today;
+            case 'active':
+              return fromDate <= today && toDate >= today;
+            case 'past':
+              return toDate < today;
+            default:
+              return true;
+          }
+        });
+      }
+
+      const events = filteredLocations.map(location => {
+        const item = stockData.find(s => s.id === location.itemId);
+        const itemName = item ? item.name : `Article ${location.itemId}`;
+        
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const fromDate = new Date(location.from);
+        const toDate = new Date(location.to);
+        
+        let className = 'past';
+        if (fromDate > today) {
+          className = 'upcoming';
+        } else if (toDate >= today) {
+          className = 'active';
+        }
+
+        return {
+          id: location.id,
+          title: `${location.clientName} - ${itemName}`,
+          start: location.from,
+          end: getNextDay(location.to), // FullCalendar attend la date de fin + 1 jour pour les événements "all day"
+          className: `event-${className}`,
+          extendedProps: {
+            location: location,
+            item: item
+          }
+        };
+      });
+
+      globalCalendar.removeAllEvents();
+      globalCalendar.addEventSource(events);
+    }
+
+    function getNextDay(dateStr) {
+      const date = new Date(dateStr);
+      date.setDate(date.getDate() + 1);
+      return date.toISOString().split('T')[0];
+    }
+
+    function showEventDetails(event) {
+      const location = event.extendedProps.location;
+      const item = event.extendedProps.item;
+      
+      const days = Math.ceil((new Date(location.to) - new Date(location.from)) / (1000 * 60 * 60 * 24)) + 1;
+      const price = item ? item.price || 0 : 0;
+      const total = price * (location.qty || 1) * days + (location.deliveryCost || 0);
+
+      const detailsHTML = `
+        <h3>Détails de la réservation</h3>
+        <div class="event-details">
+          <div class="detail-section">
+            <h4>Client</h4>
+            <p><strong>${location.clientName}</strong></p>
+            ${location.clientPhone ? `<p>📞 ${location.clientPhone}</p>` : ''}
+            ${location.clientEmail ? `<p>✉️ ${location.clientEmail}</p>` : ''}
+            ${location.messengerHandle ? `<p>💬 ${location.messengerHandle}</p>` : ''}
+            ${location.preferredContact ? `<p><small>Contact préféré: ${location.preferredContact}</small></p>` : ''}
+          </div>
+          
+          <div class="detail-section">
+            <h4>Matériel</h4>
+            <p><strong>${item ? item.name : `Article ${location.itemId}`}</strong></p>
+            <p>Quantité: ${location.qty || 1}</p>
+            ${item ? `<p>Prix: ${item.price || 0}€/jour</p>` : ''}
+            ${item ? `<p>Caution: ${item.caution || 0}€</p>` : ''}
+          </div>
+          
+          <div class="detail-section">
+            <h4>Dates et coûts</h4>
+            <p><strong>Du:</strong> ${location.from}</p>
+            <p><strong>Au:</strong> ${location.to}</p>
+            <p><strong>Durée:</strong> ${days} jour(s)</p>
+            <p><strong>Total:</strong> ${total.toFixed(2)}€</p>
+            ${location.deliveryCost ? `<p><strong>Livraison:</strong> ${location.deliveryCost}€</p>` : ''}
+          </div>
+          
+          ${location.eventDescription ? `
+            <div class="detail-section">
+              <h4>Événement</h4>
+              <p>${location.eventDescription}</p>
+            </div>
+          ` : ''}
+          
+          ${location.deliveryAddress ? `
+            <div class="detail-section">
+              <h4>Livraison</h4>
+              <p><strong>Adresse:</strong> ${location.deliveryAddress}</p>
+              <p><strong>Mode:</strong> ${location.deliveryMethod === 'delivery' ? 'Livraison' : 'Récupération sur place'}</p>
+            </div>
+          ` : ''}
+          
+          ${location.clientNotes ? `
+            <div class="detail-section">
+              <h4>Notes</h4>
+              <p>${location.clientNotes}</p>
+            </div>
+          ` : ''}
+        </div>
+        
+        <div class="modal-actions">
+          <button onclick="editLocationFromCalendar(${location.id})" class="btn-primary">Modifier</button>
+          <button onclick="deleteLocationFromCalendar(${location.id})" class="btn-delete">Supprimer</button>
+        </div>
+      `;
+
+      document.getElementById('eventDetails').innerHTML = detailsHTML;
+      document.getElementById('eventModal').style.display = 'block';
+    }
+
+    function closeEventModal() {
+      document.getElementById('eventModal').style.display = 'none';
+    }
+
+    function editLocationFromCalendar(locationId) {
+      closeEventModal();
+      window.location.href = `locations.html?edit=${locationId}`;
+    }
+
+    async function deleteLocationFromCalendar(locationId) {
+      if (!confirm('Êtes-vous sûr de vouloir supprimer cette réservation ?')) return;
+
+      try {
+        const response = await fetch(`/locations/${locationId}`, { method: 'DELETE' });
+        if (response.ok) {
+          closeEventModal();
+          loadAllData();
+        }
+      } catch (error) {
+        console.error('Erreur lors de la suppression:', error);
+      }
+    }
+
+    function updateDetailedPlanning() {
+      const container = document.getElementById('detailedPlanning');
+      
+      if (locationsData.length === 0) {
+        container.innerHTML = '<p>Aucune réservation</p>';
+        return;
+      }
+
+      // Grouper par semaine
+      const weeklyPlanning = {};
+      
+      locationsData.forEach(location => {
+        const startDate = new Date(location.from);
+        const weekStart = getWeekStart(startDate);
+        const weekKey = weekStart.toISOString().split('T')[0];
+        
+        if (!weeklyPlanning[weekKey]) {
+          weeklyPlanning[weekKey] = [];
+        }
+        
+        weeklyPlanning[weekKey].push(location);
+      });
+
+      let planningHTML = '';
+      
+      Object.keys(weeklyPlanning)
+        .sort()
+        .slice(0, 4) // Afficher seulement les 4 prochaines semaines
+        .forEach(weekKey => {
+          const weekStart = new Date(weekKey);
+          const weekEnd = new Date(weekStart);
+          weekEnd.setDate(weekEnd.getDate() + 6);
+          
+          planningHTML += `
+            <div class="week-section">
+              <h4>Semaine du ${formatDate(weekStart)} au ${formatDate(weekEnd)}</h4>
+              <div class="week-locations">
+          `;
+          
+          weeklyPlanning[weekKey]
+            .sort((a, b) => new Date(a.from) - new Date(b.from))
+            .forEach(location => {
+              const item = stockData.find(s => s.id === location.itemId);
+              const itemName = item ? item.name : `Article ${location.itemId}`;
+              
+              planningHTML += `
+                <div class="planning-item">
+                  <div class="planning-date">${location.from} → ${location.to}</div>
+                  <div class="planning-client"><strong>${location.clientName}</strong></div>
+                  <div class="planning-item-name">${itemName} (${location.qty || 1})</div>
+                  ${location.eventDescription ? `<div class="planning-event">${location.eventDescription}</div>` : ''}
+                </div>
+              `;
+            });
+          
+          planningHTML += `
+              </div>
+            </div>
+          `;
+        });
+
+      container.innerHTML = planningHTML;
+    }
+
+    function getWeekStart(date) {
+      const day = date.getDay();
+      const diff = date.getDate() - day + (day === 0 ? -6 : 1); // Ajuster pour que lundi soit le premier jour
+      return new Date(date.setDate(diff));
+    }
+
+    function formatDate(date) {
+      return date.toLocaleDateString('fr-FR', { 
+        day: 'numeric', 
+        month: 'short' 
+      });
+    }
+
+    // Event listeners pour les filtres
+    document.getElementById('itemFilter').addEventListener('change', refreshCalendar);
+    document.getElementById('statusFilter').addEventListener('change', refreshCalendar);
+
+    // Fermer les modales en cliquant à l'extérieur
+    window.onclick = function(event) {
+      const modal = document.getElementById('eventModal');
+      if (event.target == modal) {
+        closeEventModal();
+      }
+    }
+
+    // Initialize calendar when DOM is ready
+    document.addEventListener('DOMContentLoaded', function() {
+      console.log("DOM Content Loaded !");
+      
+      // Initialize calendar AFTER everything else is loaded
+      setTimeout(() => {
+        try {
+          console.log("Initialisation du calendrier...");
+          const calendarEl = document.getElementById('calendar');
+          if (!calendarEl) {
+            console.error("Élément calendar non trouvé !");
+            return;
+          }
+
+          if (typeof FullCalendar === 'undefined') {
+            console.error("FullCalendar non chargé !");
+            return;
+          }
+          
+          initializeCalendar();
+          loadAllData();
+          console.log("Calendrier initialisé avec succès !");
+        } catch (error) {
+          console.error("Erreur lors de l'initialisation du calendrier:", error);
+        }
+      }, 100);
+    });
+  </script>
+</body>
+</html>

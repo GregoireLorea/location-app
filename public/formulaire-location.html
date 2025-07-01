@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Demande de Location</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 1.1em;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-row {
+            display: flex;
+            gap: 15px;
+        }
+
+        .form-row .form-group {
+            flex: 1;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 600;
+        }
+
+        .required {
+            color: #e74c3c;
+        }
+
+        input, select, textarea {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e1e8ed;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s ease;
+        }
+
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+
+        .submit-btn {
+            width: 100%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            border: none;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+
+        .submit-btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .submit-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .success-message, .error-message {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .success-message {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .loading-spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .info-section {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+        }
+
+        .info-section h3 {
+            color: #495057;
+            margin-bottom: 15px;
+        }
+
+        .info-list {
+            list-style: none;
+        }
+
+        .info-list li {
+            padding: 5px 0;
+            color: #6c757d;
+        }
+
+        .info-list li:before {
+            content: "✓ ";
+            color: #28a745;
+            font-weight: bold;
+            margin-right: 5px;
+        }
+
+        .materiel-selection {
+            border: 2px solid #e1e8ed;
+            border-radius: 8px;
+            padding: 15px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .materiel-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px;
+            margin-bottom: 10px;
+            border: 1px solid #e9ecef;
+            border-radius: 6px;
+            transition: all 0.2s ease;
+        }
+
+        .materiel-item:hover {
+            border-color: #667eea;
+            background-color: #f8f9ff;
+        }
+
+        .materiel-item.selected {
+            border-color: #667eea;
+            background-color: #e8f0fe;
+        }
+
+        .materiel-info {
+            flex: 1;
+        }
+
+        .materiel-name {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 4px;
+        }
+
+        .materiel-details {
+            font-size: 14px;
+            color: #666;
+        }
+
+        .materiel-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .qty-input {
+            width: 60px;
+            padding: 6px 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            text-align: center;
+        }
+
+        .materiel-checkbox {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+
+        .availability-status {
+            margin-top: 15px;
+            padding: 12px;
+            border-radius: 6px;
+            font-weight: 500;
+        }
+
+        .availability-success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+
+        .availability-warning {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+        }
+
+        .availability-error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+
+        .availability-loading {
+            background-color: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 20px;
+                margin: 10px;
+            }
+
+            .form-row {
+                flex-direction: column;
+            }
+
+            .header h1 {
+                font-size: 2em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎪 Demande de Location</h1>
+            <p>Remplissez le formulaire ci-dessous pour faire votre demande</p>
+        </div>
+
+        <div class="info-section">
+            <h3>📋 Informations importantes</h3>
+            <ul class="info-list">
+                <li>Réponse sous 24h maximum</li>
+                <li>Confirmation par email et/ou téléphone</li>
+                <li>Possibilité de livraison selon disponibilité</li>
+                <li>Tarifs dégressifs pour locations longues</li>
+            </ul>
+        </div>
+
+        <div id="successMessage" class="success-message">
+            <strong>✅ Demande envoyée avec succès !</strong><br>
+            Nous reviendrons vers vous rapidement pour confirmer votre réservation.
+        </div>
+
+        <div id="errorMessage" class="error-message">
+            <strong>❌ Erreur lors de l'envoi</strong><br>
+            <span id="errorText">Une erreur est survenue. Veuillez réessayer.</span>
+        </div>
+
+        <div id="loading" class="loading">
+            <div class="loading-spinner"></div>
+            <p>Envoi de votre demande...</p>
+        </div>
+
+        <form id="locationForm">
+            <!-- Informations personnelles -->
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="prenom">Prénom <span class="required">*</span></label>
+                    <input type="text" id="prenom" name="prenom" required>
+                </div>
+                <div class="form-group">
+                    <label for="nom">Nom <span class="required">*</span></label>
+                    <input type="text" id="nom" name="nom" required>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="email">Email <span class="required">*</span></label>
+                <input type="email" id="email" name="email" required>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="telephone">Téléphone</label>
+                    <input type="tel" id="telephone" name="telephone">
+                </div>
+                <div class="form-group">
+                    <label for="contact_pref">Contact préféré</label>
+                    <select id="contact_pref" name="contact_pref">
+                        <option value="email">Email</option>
+                        <option value="telephone">Téléphone</option>
+                        <option value="messenger">Messenger</option>
+                    </select>
+                </div>
+            </div>
+
+
+            <div class="form-group">
+                <label for="messenger">Contact Messenger (optionnel)</label>
+                <input type="text" id="messenger" name="messenger" placeholder="@votre_nom_messenger ou lien profil">
+            </div>
+
+            
+            <div class="form-group">
+                <label for="association">Association / Organisation</label>
+                <input type="text" id="association" name="association">
+            </div>
+
+            
+
+            <!-- Dates et heures de location -->
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="date_debut">Date de début <span class="required">*</span></label>
+                    <input type="date" id="date_debut" name="date_debut" required>
+                </div>
+                <div class="form-group">
+                    <label for="heure_debut">Heure de début</label>
+                    <input type="time" id="heure_debut" name="heure_debut" value="09:00">
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="date_fin">Date de fin <span class="required">*</span></label>
+                    <input type="date" id="date_fin" name="date_fin" required>
+                </div>
+                <div class="form-group">
+                    <label for="heure_fin">Heure de fin</label>
+                    <input type="time" id="heure_fin" name="heure_fin" value="18:00">
+                </div>
+            </div>
+
+            <!-- Matériel demandé -->
+            <div class="form-group">
+                <label for="materiel_list">Matériel souhaité <span class="required">*</span></label>
+                <div id="materiel_list" class="materiel-selection">
+                    <p>Chargement des matériels...</p>
+                </div>
+                <div id="availability_status" class="availability-status" style="display: none;"></div>
+            </div>
+
+            <!-- Informations complémentaires -->
+            <div class="form-group">
+                <label for="commentaire">Commentaires / Informations complémentaires</label>
+                <textarea id="commentaire" name="commentaire" placeholder="Décrivez votre événement, vos besoins spécifiques, questions..."></textarea>
+            </div>
+
+            <button type="submit" class="submit-btn" id="submitBtn">
+                📤 Envoyer ma demande
+            </button>
+        </form>
+    </div>
+
+    <script>
+        // Configuration
+        const API_BASE_URL = window.location.origin; // Utilise automatiquement le bon domaine
+        const WEBHOOK_ENDPOINT = '/webhook/email';
+
+        // Éléments du DOM
+        const form = document.getElementById('locationForm');
+        const submitBtn = document.getElementById('submitBtn');
+        const loading = document.getElementById('loading');
+        const successMessage = document.getElementById('successMessage');
+        const errorMessage = document.getElementById('errorMessage');
+        const errorText = document.getElementById('errorText');
+        const materielList = document.getElementById('materiel_list');
+        const availabilityStatus = document.getElementById('availability_status');
+
+        // Variables globales
+        let materialsData = [];
+        let selectedMaterials = [];
+        let availabilityTimer = null;
+
+        // Charger la liste des matériels disponibles
+        async function loadMaterials() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/stock`);
+                materialsData = await response.json();
+                
+                renderMaterialsList();
+            } catch (error) {
+                console.error('Erreur chargement matériels:', error);
+                materielList.innerHTML = '<p style="color: #e74c3c;">Erreur de chargement des matériels</p>';
+            }
+        }
+
+        // Afficher la liste des matériels
+        function renderMaterialsList() {
+            if (materialsData.length === 0) {
+                materielList.innerHTML = '<p>Aucun matériel disponible</p>';
+                return;
+            }
+
+            const html = materialsData.map(material => `
+                <div class="materiel-item" data-id="${material.id}">
+                    <div class="materiel-info">
+                        <div class="materiel-name">${material.name}</div>
+                        <div class="materiel-details">
+                            ${material.price}€/jour • Stock: ${material.qty} • Caution: ${material.caution || 0}€
+                            ${material.description ? `<br><small>${material.description}</small>` : ''}
+                        </div>
+                    </div>
+                    <div class="materiel-controls">
+                        <label>Qté:</label>
+                        <input type="number" class="qty-input" min="1" max="${material.qty}" value="1" 
+                               onchange="updateMaterialQuantity(${material.id}, this.value)" disabled>
+                        <input type="checkbox" class="materiel-checkbox" 
+                               onchange="toggleMaterial(${material.id}, this.checked)">
+                    </div>
+                </div>
+            `).join('');
+
+            materielList.innerHTML = html;
+        }
+
+        // Activer/désactiver un matériel
+        function toggleMaterial(materialId, isChecked) {
+            const materialItem = document.querySelector(`[data-id="${materialId}"]`);
+            const qtyInput = materialItem.querySelector('.qty-input');
+            
+            if (isChecked) {
+                materialItem.classList.add('selected');
+                qtyInput.disabled = false;
+                
+                const material = materialsData.find(m => m.id === materialId);
+                selectedMaterials.push({
+                    id: materialId,
+                    name: material.name,
+                    quantity: parseInt(qtyInput.value) || 1
+                });
+            } else {
+                materialItem.classList.remove('selected');
+                qtyInput.disabled = true;
+                
+                selectedMaterials = selectedMaterials.filter(m => m.id !== materialId);
+            }
+
+            checkAvailability();
+        }
+
+        // Mettre à jour la quantité d'un matériel
+        function updateMaterialQuantity(materialId, quantity) {
+            const material = selectedMaterials.find(m => m.id === materialId);
+            if (material) {
+                material.quantity = parseInt(quantity) || 1;
+                checkAvailability();
+            }
+        }
+
+        // Vérifier la disponibilité des matériels sélectionnés
+        async function checkAvailability() {
+            if (selectedMaterials.length === 0) {
+                availabilityStatus.style.display = 'none';
+                updateSubmitButton(true);
+                return;
+            }
+
+            const dateDebut = document.getElementById('date_debut').value;
+            const dateFin = document.getElementById('date_fin').value;
+            const heureDebut = document.getElementById('heure_debut').value;
+            const heureFin = document.getElementById('heure_fin').value;
+
+            if (!dateDebut || !dateFin) {
+                availabilityStatus.style.display = 'none';
+                return;
+            }
+
+            // Construire les dates complètes
+            const fromDateTime = `${dateDebut}T${heureDebut || '09:00'}:00`;
+            const toDateTime = `${dateFin}T${heureFin || '18:00'}:00`;
+
+            // Débounce pour éviter trop de requêtes
+            clearTimeout(availabilityTimer);
+            availabilityTimer = setTimeout(async () => {
+                await performAvailabilityCheck(fromDateTime, toDateTime);
+            }, 500);
+        }
+
+        // Effectuer la vérification de disponibilité
+        async function performAvailabilityCheck(fromDateTime, toDateTime) {
+            try {
+                showAvailabilityStatus('loading', 'Vérification de la disponibilité...');
+
+                // Charger les locations existantes
+                const response = await fetch(`${API_BASE_URL}/locations`);
+                const locations = await response.json();
+
+                let allAvailable = true;
+                let availabilityResults = [];
+
+                for (const selectedMaterial of selectedMaterials) {
+                    const material = materialsData.find(m => m.id === selectedMaterial.id);
+                    
+                    // Trouver les conflits pour ce matériel
+                    const conflicts = locations.filter(location => {
+                        if (location.itemId !== selectedMaterial.id || location.status !== 'ongoing') {
+                            return false;
+                        }
+
+                        const locFrom = new Date(location.from);
+                        const locTo = new Date(location.to);
+                        const reqFrom = new Date(fromDateTime);
+                        const reqTo = new Date(toDateTime);
+
+                        return (reqFrom <= locTo && reqTo >= locFrom);
+                    });
+
+                    const bookedQuantity = conflicts.reduce((sum, loc) => sum + (loc.qty || 1), 0);
+                    const availableQuantity = material.qty - bookedQuantity;
+                    const isAvailable = availableQuantity >= selectedMaterial.quantity;
+
+                    if (!isAvailable) {
+                        allAvailable = false;
+                    }
+
+                    availabilityResults.push({
+                        material: material,
+                        requested: selectedMaterial.quantity,
+                        available: availableQuantity,
+                        isAvailable: isAvailable
+                    });
+                }
+
+                // Afficher les résultats
+                if (allAvailable) {
+                    showAvailabilityStatus('success', '✅ Tous les matériels sont disponibles pour ces dates et heures !');
+                    updateSubmitButton(true);
+                } else {
+                    const unavailableItems = availabilityResults
+                        .filter(r => !r.isAvailable)
+                        .map(r => `${r.material.name} (demandé: ${r.requested}, disponible: ${r.available})`)
+                        .join(', ');
+                    
+                    showAvailabilityStatus('error', `❌ Matériels non disponibles: ${unavailableItems}`);
+                    updateSubmitButton(false);
+                }
+
+            } catch (error) {
+                console.error('Erreur vérification disponibilité:', error);
+                showAvailabilityStatus('error', '❌ Erreur lors de la vérification de disponibilité');
+                updateSubmitButton(false);
+            }
+        }
+
+        // Afficher le statut de disponibilité
+        function showAvailabilityStatus(type, message) {
+            availabilityStatus.style.display = 'block';
+            availabilityStatus.className = `availability-status availability-${type}`;
+            availabilityStatus.textContent = message;
+        }
+
+        // Mettre à jour le bouton de soumission
+        function updateSubmitButton(enabled) {
+            submitBtn.disabled = !enabled || selectedMaterials.length === 0;
+            if (!enabled && selectedMaterials.length > 0) {
+                submitBtn.textContent = '❌ Matériel non disponible';
+            } else if (selectedMaterials.length === 0) {
+                submitBtn.textContent = '📝 Sélectionnez du matériel';
+            } else {
+                submitBtn.textContent = '📤 Envoyer ma demande';
+            }
+        }
+
+        // Fonction pour envoyer la demande
+        async function submitRequest(formData) {
+            const response = await fetch(`${API_BASE_URL}${WEBHOOK_ENDPOINT}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(formData)
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Erreur lors de l\'envoi');
+            }
+
+            return await response.json();
+        }
+
+        // Gestionnaire de soumission du formulaire
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            if (selectedMaterials.length === 0) {
+                showError('Veuillez sélectionner au moins un matériel');
+                return;
+            }
+
+            // Réinitialiser les messages
+            hideMessages();
+            
+            // Afficher le loading
+            showLoading(true);
+
+            try {
+                // Récupérer les données du formulaire
+                const formData = new FormData(form);
+                const data = Object.fromEntries(formData.entries());
+
+                // Créer une demande pour chaque matériel sélectionné
+                const requests = [];
+                
+                for (const material of selectedMaterials) {
+                    const requestData = {
+                        firstname: data.prenom,
+                        lastname: data.nom,
+                        email: data.email,
+                        phone: data.telephone,
+                        association: data.association,
+                        messenger: data.messenger,
+                        contact_pref: data.contact_pref,
+                        date_debut: data.date_debut,
+                        date_fin: data.date_fin,
+                        heure_debut: data.heure_debut,
+                        heure_fin: data.heure_fin,
+                        materiel_id: material.id,
+                        materiel_nom: material.name,
+                        quantite: material.quantity,
+                        commentaire: data.commentaire
+                    };
+
+                    requests.push(submitRequest(requestData));
+                }
+
+                // Envoyer toutes les demandes
+                await Promise.all(requests);
+                
+                // Afficher le succès
+                showSuccess(`Demande envoyée avec succès pour ${selectedMaterials.length} matériel(s) !`);
+                form.reset();
+                selectedMaterials = [];
+                renderMaterialsList();
+                availabilityStatus.style.display = 'none';
+                updateSubmitButton(false);
+                
+                // Recharger les matériels pour remettre à jour le stock
+                await loadMaterials();
+
+            } catch (error) {
+                console.error('Erreur:', error);
+                showError(error.message);
+            } finally {
+                showLoading(false);
+            }
+        });
+
+        // Fonctions utilitaires pour l'interface
+        function showLoading(show) {
+            loading.style.display = show ? 'block' : 'none';
+            submitBtn.disabled = show;
+            submitBtn.textContent = show ? 'Envoi en cours...' : '📤 Envoyer ma demande';
+        }
+
+        function showSuccess(message = 'Demande envoyée avec succès !') {
+            successMessage.innerHTML = `<strong>✅ ${message}</strong><br>Nous reviendrons vers vous rapidement pour confirmer votre réservation.`;
+            successMessage.style.display = 'block';
+            setTimeout(() => {
+                successMessage.style.display = 'none';
+            }, 5000);
+        }
+
+        function showError(message) {
+            errorText.textContent = message;
+            errorMessage.style.display = 'block';
+            setTimeout(() => {
+                errorMessage.style.display = 'none';
+            }, 8000);
+        }
+
+        function hideMessages() {
+            successMessage.style.display = 'none';
+            errorMessage.style.display = 'none';
+        }
+
+        // Validation des dates et heures
+        document.getElementById('date_debut').addEventListener('change', function() {
+            const dateDebut = this.value;
+            const dateFin = document.getElementById('date_fin');
+            
+            if (dateDebut) {
+                dateFin.min = dateDebut;
+                if (dateFin.value && dateFin.value < dateDebut) {
+                    dateFin.value = dateDebut;
+                }
+            }
+            checkAvailability();
+        });
+
+        document.getElementById('date_fin').addEventListener('change', checkAvailability);
+        document.getElementById('heure_debut').addEventListener('change', checkAvailability);
+        document.getElementById('heure_fin').addEventListener('change', checkAvailability);
+
+        // Initialisation
+        document.addEventListener('DOMContentLoaded', function() {
+            // Définir la date minimum à aujourd'hui
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('date_debut').min = today;
+            document.getElementById('date_fin').min = today;
+
+            // Charger les matériels
+            loadMaterials();
+            
+            // Désactiver le bouton de soumission initialement
+            updateSubmitButton(false);
+        });
+    </script>
+</body>
+</html>
