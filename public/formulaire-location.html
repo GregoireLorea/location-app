@@ -207,6 +207,31 @@
             background-color: #e8f0fe;
         }
 
+        .materiel-photo {
+            width: 60px;
+            height: 60px;
+            margin-right: 12px;
+            flex-shrink: 0;
+            border-radius: 6px;
+            overflow: hidden;
+            background: #f8f9fa;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .materiel-photo img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .materiel-photo.no-photo {
+            color: #6c757d;
+            font-size: 24px;
+            border: 2px dashed #dee2e6;
+        }
+
         .materiel-info {
             flex: 1;
         }
@@ -296,6 +321,7 @@
             <p>Remplissez le formulaire ci-dessous pour faire votre demande</p>
         </div>
 
+        <!-- 
         <div class="info-section">
             <h3>📋 Informations importantes</h3>
             <ul class="info-list">
@@ -304,7 +330,8 @@
                 <li>Possibilité de livraison selon disponibilité</li>
                 <li>Tarifs dégressifs pour locations longues</li>
             </ul>
-        </div>
+        </div> 
+        -->
 
         <div id="successMessage" class="success-message">
             <strong>✅ Demande envoyée avec succès !</strong><br>
@@ -360,7 +387,6 @@
                 <input type="text" id="messenger" name="messenger" placeholder="@votre_nom_messenger ou lien profil">
             </div>
 
-            
             <div class="form-group">
                 <label for="association">Association / Organisation</label>
                 <input type="text" id="association" name="association">
@@ -435,7 +461,7 @@
         // Charger la liste des matériels disponibles
         async function loadMaterials() {
             try {
-                const response = await fetch(`${API_BASE_URL}/stock`);
+                const response = await fetch(`${API_BASE_URL}/public/stock`);
                 materialsData = await response.json();
                 
                 renderMaterialsList();
@@ -454,6 +480,12 @@
 
             const html = materialsData.map(material => `
                 <div class="materiel-item" data-id="${material.id}">
+                    ${material.photo ? 
+                        `<div class="materiel-photo">
+                            <img src="${material.photo}" alt="${material.name}" loading="lazy">
+                         </div>` : 
+                        '<div class="materiel-photo no-photo">📷</div>'
+                    }
                     <div class="materiel-info">
                         <div class="materiel-name">${material.name}</div>
                         <div class="materiel-details">
@@ -542,63 +574,51 @@
             try {
                 showAvailabilityStatus('loading', 'Vérification de la disponibilité...');
 
-                // Charger les locations existantes
-                const response = await fetch(`${API_BASE_URL}/locations`);
-                const locations = await response.json();
+                // Préparer les données pour la vérification
+                const items = selectedMaterials.map(sm => ({
+                    itemId: sm.id,
+                    quantity: sm.quantity
+                }));
 
-                let allAvailable = true;
-                let availabilityResults = [];
+                // Appeler l'endpoint public de vérification de disponibilité
+                const response = await fetch(`${API_BASE_URL}/public/check-availability`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        items: items,
+                        from: fromDateTime,
+                        to: toDateTime
+                    })
+                });
 
-                for (const selectedMaterial of selectedMaterials) {
-                    const material = materialsData.find(m => m.id === selectedMaterial.id);
-                    
-                    // Trouver les conflits pour ce matériel
-                    const conflicts = locations.filter(location => {
-                        if (location.itemId !== selectedMaterial.id || location.status !== 'ongoing') {
-                            return false;
-                        }
-
-                        const locFrom = new Date(location.from);
-                        const locTo = new Date(location.to);
-                        const reqFrom = new Date(fromDateTime);
-                        const reqTo = new Date(toDateTime);
-
-                        return (reqFrom <= locTo && reqTo >= locFrom);
-                    });
-
-                    const bookedQuantity = conflicts.reduce((sum, loc) => sum + (loc.qty || 1), 0);
-                    const availableQuantity = material.qty - bookedQuantity;
-                    const isAvailable = availableQuantity >= selectedMaterial.quantity;
-
-                    if (!isAvailable) {
-                        allAvailable = false;
-                    }
-
-                    availabilityResults.push({
-                        material: material,
-                        requested: selectedMaterial.quantity,
-                        available: availableQuantity,
-                        isAvailable: isAvailable
-                    });
+                if (!response.ok) {
+                    throw new Error(`Erreur HTTP: ${response.status}`);
                 }
 
-                // Afficher les résultats
-                if (allAvailable) {
-                    showAvailabilityStatus('success', '✅ Tous les matériels sont disponibles pour ces dates et heures !');
-                    updateSubmitButton(true);
+                const result = await response.json();
+
+                if (result.success) {
+                    if (result.allAvailable) {
+                        showAvailabilityStatus('success', '✅ Tous les matériels sont disponibles pour ces dates et heures !');
+                        updateSubmitButton(true);
+                    } else {
+                        const unavailableItems = result.results
+                            .filter(r => !r.isAvailable)
+                            .map(r => `${r.itemName} (demandé: ${r.quantity}, disponible: ${r.available}/${r.total})`)
+                            .join(', ');
+                        
+                        showAvailabilityStatus('error', `❌ Matériels non disponibles: ${unavailableItems}`);
+                        updateSubmitButton(false);
+                    }
                 } else {
-                    const unavailableItems = availabilityResults
-                        .filter(r => !r.isAvailable)
-                        .map(r => `${r.material.name} (demandé: ${r.requested}, disponible: ${r.available})`)
-                        .join(', ');
-                    
-                    showAvailabilityStatus('error', `❌ Matériels non disponibles: ${unavailableItems}`);
-                    updateSubmitButton(false);
+                    throw new Error(result.error || 'Erreur de vérification');
                 }
 
             } catch (error) {
                 console.error('Erreur vérification disponibilité:', error);
-                showAvailabilityStatus('error', '❌ Erreur lors de la vérification de disponibilité');
+                showAvailabilityStatus('error', '❌ Erreur lors de la vérification de disponibilité: ' + error.message);
                 updateSubmitButton(false);
             }
         }

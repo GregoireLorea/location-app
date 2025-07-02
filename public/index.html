@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <title>Dashboard - Gestion des Locations</title>
   <link href="style.css" rel="stylesheet" />
+  <script src="auth.js"></script>
 </head>
 <body>
   <nav class="navbar">
@@ -16,6 +17,7 @@
       <li><a href="locations.html" class="nav-link">Gestion Locations</a></li>
       <li><a href="calendar.html" class="nav-link">Calendrier</a></li>
       <li><a href="formulaire-location.html" class="nav-link">📝 Demande Public</a></li>
+      <li><a href="#" class="nav-link" onclick="logout()" style="color: #e74c3c;">🚪 Déconnexion</a></li>
     </ul>
   </nav>
 
@@ -179,6 +181,22 @@
 
     // Charger les données au chargement de la page
     loadDashboardData();
+
+    // Fonction de déconnexion
+    async function logout() {
+      if (confirm('Êtes-vous sûr de vouloir vous déconnecter ?')) {
+        try {
+          const response = await fetch('/auth/logout', { method: 'POST' });
+          if (response.ok) {
+            window.location.href = '/login.html';
+          }
+        } catch (error) {
+          console.error('Erreur de déconnexion:', error);
+          // Rediriger quand même en cas d'erreur
+          window.location.href = '/login.html';
+        }
+      }
+    }
   </script>
 </body>
 </html>

@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <title>Gestion Stock - Gestion des Locations</title>
   <link href="style.css" rel="stylesheet" />
+  <script src="auth.js"></script>
 </head>
 <body>
   <nav class="navbar">
@@ -15,6 +16,8 @@
       <li><a href="stock.html" class="nav-link active">Gestion Stock</a></li>
       <li><a href="locations.html" class="nav-link">Gestion Locations</a></li>
       <li><a href="calendar.html" class="nav-link">Calendrier</a></li>
+      <li><a href="formulaire-location.html" class="nav-link">📝 Demande Public</a></li>
+      <li><a href="#" class="nav-link" onclick="logout()" style="color: #e74c3c;">🚪 Déconnexion</a></li>
     </ul>
   </nav>
 
@@ -42,6 +45,11 @@
           <option value="audio">Audio/Vidéo</option>
           <option value="autre">Autre</option>
         </select>
+        <div class="file-upload-wrapper">
+          <input id="photo" type="file" accept="image/*" class="file-input">
+          <label for="photo" class="file-label">📷 Ajouter une photo</label>
+          <div id="photo-preview" class="photo-preview"></div>
+        </div>
         <button onclick="addStock()" class="btn-primary">Ajouter au stock</button>
       </div>
     </div>
@@ -75,6 +83,7 @@
         <table class="stock-table" id="stockTable">
           <thead>
             <tr>
+              <th>Photo</th>
               <th>Article</th>
               <th>Description</th>
               <th>Catégorie</th>
@@ -137,18 +146,58 @@
 
     async function loadAllData() {
       try {
-        const [stockResponse, locationsResponse] = await Promise.all([
-          fetch('/stock'),
-          fetch('/locations')
-        ]);
+        console.log('🔄 Début du chargement des données...');
         
+        // Vérifier d'abord l'authentification
+        const authResponse = await fetch('/auth/status');
+        const authResult = await authResponse.json();
+        
+        if (!authResult.authenticated) {
+          console.error('❌ Non authentifié, redirection...');
+          window.location.href = '/login.html';
+          return;
+        }
+        
+        console.log('✅ Authentifié en tant que:', authResult.user.username);
+        
+        console.log('📦 Chargement du stock...');
+        const stockResponse = await fetch('/stock');
+        if (!stockResponse.ok) {
+          throw new Error(`Erreur stock: ${stockResponse.status} ${stockResponse.statusText}`);
+        }
         stockData = await stockResponse.json();
+        console.log(`✅ Stock chargé: ${stockData.length} articles`);
+        
+        console.log('📋 Chargement des réservations...');
+        const locationsResponse = await fetch('/locations');
+        if (!locationsResponse.ok) {
+          throw new Error(`Erreur locations: ${locationsResponse.status} ${locationsResponse.statusText}`);
+        }
         locationsData = await locationsResponse.json();
+        console.log(`✅ Réservations chargées: ${locationsData.length} réservations`);
         
         refreshStockTable();
         refreshReservationDetails();
+        console.log('🎉 Chargement terminé avec succès');
+        
       } catch (error) {
-        console.error('Erreur lors du chargement:', error);
+        console.error('❌ Erreur lors du chargement:', error);
+        
+        // Afficher l'erreur dans l'interface
+        const tbody = document.getElementById('stockTableBody');
+        if (tbody) {
+          tbody.innerHTML = `
+            <tr>
+              <td colspan="11" style="text-align: center; color: #dc3545; padding: 20px;">
+                <strong>❌ Erreur de chargement</strong><br>
+                ${error.message}<br>
+                <button onclick="loadAllData()" style="margin-top: 10px; padding: 5px 10px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                  🔄 Réessayer
+                </button>
+              </td>
+            </tr>
+          `;
+        }
       }
     }
 
@@ -160,25 +209,29 @@
       const qty = parseInt(document.getElementById('qty').value);
       const location = document.getElementById('location').value;
       const category = document.getElementById('category').value;
+      const photo = document.getElementById('photo').files[0];
 
       if (!name || isNaN(price) || isNaN(caution) || isNaN(qty)) {
         alert('Veuillez remplir tous les champs obligatoires');
         return;
       }
 
+      const formData = new FormData();
+      formData.append('name', name);
+      formData.append('description', description);
+      formData.append('price', price);
+      formData.append('caution', caution);
+      formData.append('qty', qty);
+      formData.append('location', location || 'Non spécifié');
+      formData.append('category', category || 'autre');
+      if (photo) {
+        formData.append('photo', photo);
+      }
+
       try {
         const response = await fetch('/stock', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            name, 
-            description, 
-            price, 
-            caution, 
-            qty, 
-            location: location || 'Non spécifié',
-            category: category || 'autre'
-          })
+          body: formData
         });
 
         if (response.ok) {
@@ -190,11 +243,18 @@
           document.getElementById('qty').value = '';
           document.getElementById('location').value = '';
           document.getElementById('category').value = '';
+          document.getElementById('photo').value = '';
+          document.getElementById('photo-preview').innerHTML = '';
           
+          alert('Article ajouté avec succès !');
           loadAllData();
+        } else {
+          const error = await response.json();
+          alert('Erreur lors de l\'ajout : ' + (error.error || 'Erreur inconnue'));
         }
       } catch (error) {
-        console.error('Erreur lors de l\'ajout:', error);
+        console.error('Erreur:', error);
+        alert('Erreur lors de l\'ajout de l\'article');
       }
     }
 
@@ -212,8 +272,13 @@
         const availabilityClass = available <= 0 ? 'unavailable' : 
                                  available <= 2 ? 'low-stock' : 'available';
 
+        const photoDisplay = item.photo ? 
+          `<img src="${item.photo}" alt="${item.name}" class="item-photo">` :
+          `<div class="no-photo">📷</div>`;
+
         return `
           <tr class="${availabilityClass}">
+            <td>${photoDisplay}</td>
             <td><strong>${item.name}</strong></td>
             <td>${item.description || '-'}</td>
             <td>${item.category || 'Non catégorisé'}</td>
@@ -440,8 +505,35 @@
       }
     }
 
-    // Charger les données au démarrage
-    loadAllData();
+    // Gestionnaire pour la prévisualisation de l'image
+    document.getElementById('photo').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      const preview = document.getElementById('photo-preview');
+      
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          preview.innerHTML = `
+            <img src="${e.target.result}" alt="Prévisualisation">
+            <button type="button" class="remove-photo" onclick="removePhoto()">Supprimer</button>
+          `;
+        };
+        reader.readAsDataURL(file);
+      } else {
+        preview.innerHTML = '';
+      }
+    });
+
+    function removePhoto() {
+      document.getElementById('photo').value = '';
+      document.getElementById('photo-preview').innerHTML = '';
+    }
+
+    // Initialisation au chargement de la page
+    document.addEventListener('DOMContentLoaded', function() {
+      console.log('📱 Page stock.html chargée, initialisation...');
+      loadAllData();
+    });
   </script>
 </body>
 </html>

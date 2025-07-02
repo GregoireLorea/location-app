@@ -1,23 +1,226 @@
 const express = require('express');
-const cors = require('cors');
-const bodyParser = require('body-parser');
 const path = require('path');
 const fs = require('fs');
+const session = require('express-session');
+const bcrypt = require('bcryptjs');
+const multer = require('multer');
 
 const app = express();
 const PORT = 3000;
 
-app.use(cors());
-app.use(bodyParser.json());
+// Configuration des sessions
+app.use(session({
+  secret: 'location-manager-secret-key-change-in-production',
+  resave: false,
+  saveUninitialized: false,
+  cookie: { 
+    secure: false, // true en HTTPS
+    maxAge: 24 * 60 * 60 * 1000 // 24 heures
+  }
+}));
+
+// Middleware pour parser JSON
+app.use(express.json());
+
+// Utilisateurs (à déplacer vers une base de données en production)
+const users = [
+  {
+    id: 1,
+    username: 'admin',
+    password: bcrypt.hashSync('admin123', 10), // Hash du mot de passe
+    role: 'admin'
+  },
+  {
+    id: 2,
+    username: 'user',
+    password: bcrypt.hashSync('password', 10), // Identifiants alternatifs
+    role: 'admin'
+  },
+];
+
+// Middleware d'authentification
+function requireAuth(req, res, next) {
+  if (req.session && req.session.userId) {
+    return next();
+  } else {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+}
+
+// Middleware pour servir les fichiers statiques avec authentification
+function serveWithAuth(req, res, next) {
+  const publicFiles = [
+    '/login.html',
+    '/formulaire-location.html',
+    '/style.css',
+    '/auth.js'
+  ];
+  
+  // Permettre l'accès aux endpoints publics
+  const publicPaths = [
+    '/auth/',
+    '/webhook/',
+    '/public/',
+    '/import/',
+    '/uploads/'
+  ];
+  
+  // Permettre l'accès aux fichiers publics
+  if (publicFiles.some(file => req.path.endsWith(file))) {
+    return next();
+  }
+  
+  // Permettre l'accès aux chemins publics
+  if (publicPaths.some(path => req.path.startsWith(path))) {
+    return next();
+  }
+  
+  // Rediriger vers login si pas authentifié
+  if (!req.session || !req.session.userId) {
+    if (req.path === '/' || req.path.endsWith('.html')) {
+      return res.redirect('/login.html');
+    }
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  
+  next();
+}
+
+// Servir les fichiers statiques (y compris uploads) AVANT l'authentification
+app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads')));
+app.use(serveWithAuth);
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Route pour servir index.html à la racine
-app.get('/', (req, res) => {
+// Configuration de multer pour l'upload des images
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const uploadDir = path.join(__dirname, 'public', 'uploads');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: function (req, file, cb) {
+    // Générer un nom unique avec timestamp
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, 'item-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({ 
+  storage: storage,
+  fileFilter: (req, file, cb) => {
+    // Accepter seulement les images
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Seules les images sont autorisées'), false);
+    }
+  },
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB max
+  }
+});
+
+// Route de connexion
+app.post('/auth/login', async (req, res) => {
+  try {
+    console.log('Tentative de connexion:', req.body);
+    const { username, password } = req.body;
+    
+    if (!username || !password) {
+      console.log('Erreur: champs manquants');
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Nom d\'utilisateur et mot de passe requis' 
+      });
+    }
+    
+    // Chercher l'utilisateur
+    const user = users.find(u => u.username === username);
+    console.log('Utilisateur trouvé:', user ? 'Oui' : 'Non');
+    if (!user) {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Identifiants incorrects' 
+      });
+    }
+    
+    // Vérifier le mot de passe
+    const isValidPassword = await bcrypt.compare(password, user.password);
+    console.log('Mot de passe valide:', isValidPassword);
+    if (!isValidPassword) {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Identifiants incorrects' 
+      });
+    }
+    
+    // Créer la session
+    req.session.userId = user.id;
+    req.session.username = user.username;
+    req.session.role = user.role;
+    
+    console.log('Connexion réussie pour:', username);
+    res.json({ 
+      success: true, 
+      message: 'Connexion réussie',
+      user: {
+        id: user.id,
+        username: user.username,
+        role: user.role
+      }
+    });
+    
+  } catch (error) {
+    console.error('Erreur de connexion:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Erreur serveur' 
+    });
+  }
+});
+
+// Route de déconnexion
+app.post('/auth/logout', (req, res) => {
+  req.session.destroy((err) => {
+    if (err) {
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Erreur lors de la déconnexion' 
+      });
+    }
+    res.json({ 
+      success: true, 
+      message: 'Déconnexion réussie' 
+    });
+  });
+});
+
+// Route pour vérifier le statut de connexion
+app.get('/auth/status', (req, res) => {
+  if (req.session && req.session.userId) {
+    const user = users.find(u => u.id === req.session.userId);
+    res.json({ 
+      authenticated: true, 
+      user: {
+        id: user.id,
+        username: user.username,
+        role: user.role
+      }
+    });
+  } else {
+    res.json({ authenticated: false });
+  }
+});
+
+// Route pour servir index.html à la racine (avec authentification)
+app.get('/', requireAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-const STOCK_FILE = './stock.json';
-const LOCATIONS_FILE = './locations.json';
+const STOCK_FILE = './data/stock.json';
+const LOCATIONS_FILE = './data/locations.json';
 
 function loadData(file) {
   if (!fs.existsSync(file)) return [];
@@ -45,71 +248,217 @@ function isAvailable(itemId, from, to, qty) {
   return (stock.qty - qtyBooked) >= qty;
 }
 
-app.get('/stock', (req, res) => {
+app.get('/stock', requireAuth, (req, res) => {
   res.json(loadData(STOCK_FILE));
 });
 
-app.post('/stock', (req, res) => {
+// Endpoint public pour le formulaire de demande (sans authentification)
+app.get('/public/stock', (req, res) => {
   const stock = loadData(STOCK_FILE);
-  const { name, description, price, caution, qty, location, category } = req.body;
-  stock.push({ 
-    id: Date.now(), 
-    name, 
-    description: description || '', 
-    price, 
-    caution, 
-    qty, 
-    location: location || 'Non spécifié', 
-    category: category || 'autre' 
-  });
-  saveData(STOCK_FILE, stock);
-  res.json({ ok: true });
+  // Retourner seulement les infos nécessaires pour le formulaire public
+  const publicStock = stock.map(item => ({
+    id: item.id,
+    name: item.name,
+    price: item.price,
+    qty: item.qty,
+    description: item.description,
+    photo: item.photo,
+    caution: item.caution
+  }));
+  res.json(publicStock);
+});
+
+// Endpoint public pour vérifier la disponibilité (sans authentification)
+app.post('/public/check-availability', (req, res) => {
+  try {
+    const { items, from, to } = req.body;
+    
+    if (!items || !Array.isArray(items) || !from || !to) {
+      return res.status(400).json({ 
+        error: 'Paramètres manquants (items, from, to)' 
+      });
+    }
+
+    const stock = loadData(STOCK_FILE);
+    const locations = loadData(LOCATIONS_FILE);
+    const results = [];
+
+    for (const requestedItem of items) {
+      const { itemId, quantity } = requestedItem;
+      const stockItem = stock.find(s => s.id === itemId);
+      
+      if (!stockItem) {
+        results.push({
+          itemId,
+          quantity,
+          available: 0,
+          isAvailable: false,
+          error: 'Matériel non trouvé'
+        });
+        continue;
+      }
+
+      // Trouver les conflits pour ce matériel (seulement les locations ongoing)
+      const conflicts = locations.filter(location => {
+        if (location.itemId !== itemId || location.status !== 'ongoing') {
+          return false;
+        }
+
+        const locFrom = new Date(location.from);
+        const locTo = new Date(location.to);
+        const reqFrom = new Date(from);
+        const reqTo = new Date(to);
+
+        // Vérifier le chevauchement
+        return (reqFrom <= locTo && reqTo >= locFrom);
+      });
+
+      const bookedQuantity = conflicts.reduce((sum, loc) => sum + (loc.qty || 1), 0);
+      const availableQuantity = stockItem.qty - bookedQuantity;
+      const isAvailable = availableQuantity >= quantity;
+
+      results.push({
+        itemId,
+        itemName: stockItem.name,
+        quantity,
+        available: availableQuantity,
+        total: stockItem.qty,
+        booked: bookedQuantity,
+        isAvailable
+      });
+    }
+
+    res.json({
+      success: true,
+      from,
+      to,
+      results,
+      allAvailable: results.every(r => r.isAvailable)
+    });
+
+  } catch (error) {
+    console.error('Erreur vérification disponibilité:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Erreur lors de la vérification de disponibilité' 
+    });
+  }
+});
+
+app.post('/stock', requireAuth, upload.single('photo'), (req, res) => {
+  try {
+    const stock = loadData(STOCK_FILE);
+    const { name, description, price, caution, qty, location, category } = req.body;
+    
+    // Gérer l'image uploadée
+    let photoUrl = null;
+    if (req.file) {
+      photoUrl = `/uploads/${req.file.filename}`;
+    }
+    
+    const newItem = { 
+      id: Date.now(), 
+      name, 
+      description: description || '', 
+      price: parseFloat(price) || 0, 
+      caution: parseFloat(caution) || 0, 
+      qty: parseInt(qty) || 1, 
+      location: location || 'Non spécifié', 
+      category: category || 'autre',
+      photo: photoUrl
+    };
+    
+    stock.push(newItem);
+    saveData(STOCK_FILE, stock);
+    res.json({ ok: true, item: newItem });
+  } catch (error) {
+    console.error('Erreur ajout stock:', error);
+    res.status(500).json({ error: 'Erreur lors de l\'ajout' });
+  }
 });
 
 // Modifier un item du stock
-app.put('/stock/:id', (req, res) => {
-  const stock = loadData(STOCK_FILE);
-  const itemId = parseInt(req.params.id);
-  const { name, description, price, caution, qty, location, category } = req.body;
-  
-  const itemIndex = stock.findIndex(item => item.id === itemId);
-  if (itemIndex === -1) {
-    return res.status(404).json({ error: "Item non trouvé" });
+app.put('/stock/:id', requireAuth, upload.single('photo'), (req, res) => {
+  try {
+    const stock = loadData(STOCK_FILE);
+    const itemId = parseInt(req.params.id);
+    const { name, description, price, caution, qty, location, category } = req.body;
+    
+    const itemIndex = stock.findIndex(item => item.id === itemId);
+    if (itemIndex === -1) {
+      return res.status(404).json({ error: "Item non trouvé" });
+    }
+    
+    // Conserver l'ancienne photo si pas de nouvelle photo
+    let photoUrl = stock[itemIndex].photo;
+    if (req.file) {
+      // Supprimer l'ancienne photo si elle existe
+      if (photoUrl) {
+        const oldPhotoPath = path.join(__dirname, 'public', photoUrl);
+        if (fs.existsSync(oldPhotoPath)) {
+          fs.unlinkSync(oldPhotoPath);
+        }
+      }
+      photoUrl = `/uploads/${req.file.filename}`;
+    }
+    
+    stock[itemIndex] = { 
+      id: itemId, 
+      name, 
+      description: description || '', 
+      price: parseFloat(price) || 0, 
+      caution: parseFloat(caution) || 0, 
+      qty: parseInt(qty) || 1, 
+      location: location || 'Non spécifié', 
+      category: category || 'autre',
+      photo: photoUrl
+    };
+    
+    saveData(STOCK_FILE, stock);
+    res.json({ ok: true, item: stock[itemIndex] });
+  } catch (error) {
+    console.error('Erreur modification stock:', error);
+    res.status(500).json({ error: 'Erreur lors de la modification' });
   }
-  
-  stock[itemIndex] = { 
-    id: itemId, 
-    name, 
-    description: description || '', 
-    price, 
-    caution, 
-    qty, 
-    location: location || 'Non spécifié', 
-    category: category || 'autre' 
-  };
-  saveData(STOCK_FILE, stock);
-  res.json({ ok: true });
 });
 
 // Supprimer un item du stock
-app.delete('/stock/:id', (req, res) => {
-  const stock = loadData(STOCK_FILE);
-  const itemId = parseInt(req.params.id);
-  
-  const filteredStock = stock.filter(item => item.id !== itemId);
-  if (filteredStock.length === stock.length) {
-    return res.status(404).json({ error: "Item non trouvé" });
+app.delete('/stock/:id', requireAuth, (req, res) => {
+  try {
+    const stock = loadData(STOCK_FILE);
+    const itemId = parseInt(req.params.id);
+    
+    // Trouver l'item à supprimer
+    const itemToDelete = stock.find(item => item.id === itemId);
+    if (!itemToDelete) {
+      return res.status(404).json({ error: "Item non trouvé" });
+    }
+    
+    // Supprimer la photo si elle existe
+    if (itemToDelete.photo) {
+      const photoPath = path.join(__dirname, 'public', itemToDelete.photo);
+      if (fs.existsSync(photoPath)) {
+        fs.unlinkSync(photoPath);
+        console.log(`Photo supprimée: ${photoPath}`);
+      }
+    }
+    
+    // Supprimer l'item du stock
+    const filteredStock = stock.filter(item => item.id !== itemId);
+    saveData(STOCK_FILE, filteredStock);
+    
+    res.json({ ok: true, message: 'Article et photo supprimés avec succès' });
+  } catch (error) {
+    console.error('Erreur suppression stock:', error);
+    res.status(500).json({ error: 'Erreur lors de la suppression' });
   }
-  
-  saveData(STOCK_FILE, filteredStock);
-  res.json({ ok: true });
 });
 
-app.get('/locations', (req, res) => {
+app.get('/locations', requireAuth, (req, res) => {
   res.json(loadData(LOCATIONS_FILE));
 });
 
-app.post('/locations', (req, res) => {
+app.post('/locations', requireAuth, (req, res) => {
   const locations = loadData(LOCATIONS_FILE);
   const { 
     itemId, 
@@ -157,8 +506,7 @@ app.post('/locations', (req, res) => {
 });
 
 // Modifier une réservation
-// Modifier une réservation
-app.put('/locations/:id', (req, res) => {
+app.put('/locations/:id', requireAuth, (req, res) => {
   const locations = loadData(LOCATIONS_FILE);
   const locationId = parseInt(req.params.id);
   const { 
@@ -221,7 +569,7 @@ app.put('/locations/:id', (req, res) => {
 });
 
 // Marquer une réservation comme terminée
-app.put('/locations/:id/finish', (req, res) => {
+app.put('/locations/:id/finish', requireAuth, (req, res) => {
   const locations = loadData(LOCATIONS_FILE);
   const locationId = parseInt(req.params.id);
   
@@ -236,7 +584,7 @@ app.put('/locations/:id/finish', (req, res) => {
 });
 
 // Supprimer une réservation
-app.delete('/locations/:id', (req, res) => {
+app.delete('/locations/:id', requireAuth, (req, res) => {
   const locations = loadData(LOCATIONS_FILE);
   const locationId = parseInt(req.params.id);
   
@@ -250,7 +598,7 @@ app.delete('/locations/:id', (req, res) => {
 });
 
 // Démarrer une réservation (passer de 'planned' à 'ongoing')
-app.put('/locations/:id/start', (req, res) => {
+app.put('/locations/:id/start', requireAuth, (req, res) => {
   const locations = loadData(LOCATIONS_FILE);
   const locationId = parseInt(req.params.id);
   
