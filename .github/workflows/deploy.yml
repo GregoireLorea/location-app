@@ -53,30 +53,19 @@ jobs:
         docker push $REGION-docker.pkg.dev/$PROJECT_ID/location-app-repo/location-app:latest
     
     - name: 'Deploy to Cloud Run'
-      env:
-        SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
-        EMAIL_USER: ${{ secrets.EMAIL_USER }}
-        EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
-        ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
-        ADMIN_USERS: ${{ secrets.ADMIN_USERS }}
       run: |
-        # Créer un fichier temporaire pour les variables d'environnement
-        cat > /tmp/env-vars.txt << EOF
-        NODE_ENV=production
-        SESSION_SECRET=${SESSION_SECRET}
-        EMAIL_USER=${EMAIL_USER}
-        EMAIL_PASS=${EMAIL_PASS}
-        ADMIN_EMAIL=${ADMIN_EMAIL}
-        ADMIN_USERS=${ADMIN_USERS}
-        EOF
-        
         gcloud run deploy $SERVICE_NAME \
           --image $REGION-docker.pkg.dev/$PROJECT_ID/location-app-repo/location-app:latest \
           --platform managed \
           --region $REGION \
           --allow-unauthenticated \
           --service-account cloudrun-exec@$PROJECT_ID.iam.gserviceaccount.com \
-          --env-vars-file /tmp/env-vars.txt \
+          --set-env-vars "NODE_ENV=production" \
+          --set-env-vars "SESSION_SECRET=${{ secrets.SESSION_SECRET }}" \
+          --set-env-vars "EMAIL_USER=${{ secrets.EMAIL_USER }}" \
+          --set-env-vars "EMAIL_PASS=${{ secrets.EMAIL_PASS }}" \
+          --set-env-vars "ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }}" \
+          --set-env-vars "ADMIN_USERS=${{ secrets.ADMIN_USERS }}" \
           --add-volume name=data-volume,type=cloud-storage,bucket=location-app-data-$PROJECT_ID \
           --add-volume-mount volume=data-volume,mount-path=/app/data \
           --memory 512Mi \
