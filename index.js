@@ -45,20 +45,25 @@ app.use(express.json());
 
 // Fonction pour charger les utilisateurs depuis les variables d'environnement
 function loadUsersFromEnv() {
-  const adminUsers = process.env.ADMIN_USERS || 'admin:admin123';
+  const adminUsers = process.env.ADMIN_USERS || 'admin,admin123';
   const users = [];
   
-  adminUsers.split(',').forEach((userString, index) => {
-    const [username, password] = userString.trim().split(':');
+  // Format: utilisateur1,motdepasse1,utilisateur2,motdepasse2
+  const userArray = adminUsers.split(',');
+  
+  for (let i = 0; i < userArray.length; i += 2) {
+    const username = userArray[i]?.trim();
+    const password = userArray[i + 1]?.trim();
+    
     if (username && password) {
       users.push({
-        id: index + 1,
-        username: username.trim(),
-        password: bcrypt.hashSync(password.trim(), 10),
+        id: Math.floor(i / 2) + 1,
+        username: username,
+        password: bcrypt.hashSync(password, 10),
         role: 'admin'
       });
     }
-  });
+  }
   
   console.log(`👥 ${users.length} utilisateur(s) admin chargé(s) depuis l'environnement`);
   return users;
