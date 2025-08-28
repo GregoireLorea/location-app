@@ -46,6 +46,7 @@ jobs:
           --platform managed \
           --region $REGION \
           --allow-unauthenticated \
+          --service-account cloudrun-exec@$PROJECT_ID.iam.gserviceaccount.com \
           --set-env-vars NODE_ENV=production \
           --memory 512Mi \
           --port 3000
