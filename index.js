@@ -691,12 +691,24 @@ app.post('/locations', requireAuth, async (req, res) => {
           item: item
         }];
         
-        // Envoyer les emails en parallèle
-        await Promise.all([
-          emailService.sendAdminNotification(client, items),
-          emailService.sendClientConfirmation(client, items)
-        ]);
-        console.log('📧 Emails (admin + client) envoyés pour création manuelle');
+        // Envoyer les emails séparément pour debug
+        try {
+          console.log('📧 Envoi email admin...');
+          await emailService.sendAdminNotification(client, items);
+          console.log('✅ Email admin envoyé avec succès');
+        } catch (adminEmailError) {
+          console.error('❌ Erreur email admin:', adminEmailError);
+        }
+        
+        try {
+          console.log('📧 Envoi email client...');
+          await emailService.sendClientConfirmation(client, items);
+          console.log('✅ Email client envoyé avec succès');
+        } catch (clientEmailError) {
+          console.error('❌ Erreur email client:', clientEmailError);
+        }
+        
+        console.log('📧 Processus d\'envoi emails terminé');
       }
     } catch (emailError) {
       console.error('❌ Erreur envoi emails création manuelle:', emailError);
@@ -899,12 +911,24 @@ app.post('/webhook/email', express.json(), async (req, res) => {
       pendingNotifications.delete(clientKey);
       
       try {
-        // Envoyer les emails en parallèle
-        await Promise.all([
-          emailService.sendAdminNotification(notificationData.client, notificationData.items),
-          emailService.sendClientConfirmation(notificationData.client, notificationData.items)
-        ]);
-        console.log(`📧 Emails (admin + client) envoyés pour ${notificationData.items.length} article(s)`);
+        // Envoyer les emails séparément pour debug
+        try {
+          console.log('📧 Webhook - Envoi email admin...');
+          await emailService.sendAdminNotification(notificationData.client, notificationData.items);
+          console.log('✅ Webhook - Email admin envoyé avec succès');
+        } catch (adminEmailError) {
+          console.error('❌ Webhook - Erreur email admin:', adminEmailError);
+        }
+        
+        try {
+          console.log('📧 Webhook - Envoi email client...');
+          await emailService.sendClientConfirmation(notificationData.client, notificationData.items);
+          console.log('✅ Webhook - Email client envoyé avec succès');
+        } catch (clientEmailError) {
+          console.error('❌ Webhook - Erreur email client:', clientEmailError);
+        }
+        
+        console.log(`📧 Webhook - Processus emails terminé pour ${notificationData.items.length} article(s)`);
       } catch (emailError) {
         console.error('❌ Erreur envoi emails depuis webhook:', emailError);
       }

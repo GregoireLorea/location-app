@@ -34,6 +34,21 @@ async function testEmailConfig() {
 async function sendAdminNotification(client, items) {
   try {
     console.log('🔄 Tentative d\'envoi d\'email groupé à l\'admin...');
+    console.log('🔧 Variables d\'environnement email:', {
+      EMAIL_USER: process.env.EMAIL_USER ? 'Défini ✅' : 'MANQUANT ❌',
+      ADMIN_EMAIL: process.env.ADMIN_EMAIL ? 'Défini ✅' : 'MANQUANT ❌',
+      transporterReady: !!emailTransporter ? 'OK ✅' : 'MANQUANT ❌'
+    });
+
+    if (!emailTransporter) {
+      console.error('❌ Transporteur email non initialisé pour notification admin');
+      throw new Error('Service email non initialisé');
+    }
+
+    if (!process.env.ADMIN_EMAIL) {
+      console.error('❌ ADMIN_EMAIL non défini dans les variables d\'environnement');
+      throw new Error('ADMIN_EMAIL non configuré');
+    }
 
     // Calculer les totaux
     let totalPrice = 0;
