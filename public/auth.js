@@ -4,7 +4,7 @@
 
 // Fonction de déconnexion globale
 async function logout() {
-  if (confirm('Êtes-vous sûr de vouloir vous déconnecter ?')) {
+  if (confirm('Êtes-vous sûr de vouloir vous déconnecter ? ')) {
     try {
       const response = await fetch('/auth/logout', { method: 'POST' });
       if (response.ok) {
