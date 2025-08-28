@@ -3,11 +3,17 @@ on:
   push:
     branches: [master]
 
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: europe-west1
+  SERVICE_NAME: location-app
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - name: Checkout
+      uses: actions/checkout@v3
     
     - id: 'auth'
       uses: 'google-github-actions/auth@v1'
@@ -17,20 +23,28 @@ jobs:
     - name: 'Set up Cloud SDK'
       uses: 'google-github-actions/setup-gcloud@v1'
     
-    - name: 'Configure Docker'
-      run: gcloud auth configure-docker
-    
-    - name: 'Build and Push'
+    - name: 'Configure Docker for Artifact Registry'
       run: |
-        docker build -t gcr.io/${{ secrets.GCP_PROJECT_ID }}/location-app .
-        docker push gcr.io/${{ secrets.GCP_PROJECT_ID }}/location-app
+        gcloud auth configure-docker $REGION-docker.pkg.dev
+    
+    - name: 'Create Artifact Registry repository'
+      run: |
+        gcloud artifacts repositories create location-app-repo \
+          --repository-format=docker \
+          --location=$REGION \
+          --description="Docker repository for location app" || echo "Repository may already exist"
+    
+    - name: 'Build and Push to Artifact Registry'
+      run: |
+        docker build -t $REGION-docker.pkg.dev/$PROJECT_ID/location-app-repo/location-app:latest .
+        docker push $REGION-docker.pkg.dev/$PROJECT_ID/location-app-repo/location-app:latest
     
     - name: 'Deploy to Cloud Run'
       run: |
-        gcloud run deploy location-app \
-          --image gcr.io/${{ secrets.GCP_PROJECT_ID }}/location-app \
+        gcloud run deploy $SERVICE_NAME \
+          --image $REGION-docker.pkg.dev/$PROJECT_ID/location-app-repo/location-app:latest \
           --platform managed \
-          --region europe-west1 \
+          --region $REGION \
           --allow-unauthenticated \
           --set-env-vars NODE_ENV=production \
           --memory 512Mi \
