@@ -34,6 +34,19 @@ jobs:
           --location=$REGION \
           --description="Docker repository for location app" || echo "Repository may already exist"
     
+    - name: 'Create Cloud Storage bucket for data persistence'
+      run: |
+        gsutil mb -p $PROJECT_ID -c STANDARD -l $REGION gs://location-app-data-$PROJECT_ID || echo "Bucket may already exist"
+        gsutil lifecycle set /dev/stdin gs://location-app-data-$PROJECT_ID <<EOF
+        {
+          "lifecycle": {
+            "rule": []
+          }
+        }
+        EOF
+        # Donner les permissions au compte de service Cloud Run
+        gsutil iam ch serviceAccount:cloudrun-exec@$PROJECT_ID.iam.gserviceaccount.com:objectAdmin gs://location-app-data-$PROJECT_ID
+    
     - name: 'Build and Push to Artifact Registry'
       run: |
         docker build -t $REGION-docker.pkg.dev/$PROJECT_ID/location-app-repo/location-app:latest .
@@ -52,5 +65,7 @@ jobs:
           --set-env-vars EMAIL_USER="${{ secrets.EMAIL_USER }}" \
           --set-env-vars EMAIL_PASS="${{ secrets.EMAIL_PASS }}" \
           --set-env-vars ADMIN_EMAIL="${{ secrets.ADMIN_EMAIL }}" \
+          --add-volume name=data-volume,type=cloud-storage,bucket=location-app-data-$PROJECT_ID \
+          --add-volume-mount volume=data-volume,mount-path=/app/data \
           --memory 512Mi \
           --port 3000

@@ -7,6 +7,19 @@ const multer = require('multer');
 const emailService = require('./services/emailService');
 require('dotenv').config();
 
+// Configuration des chemins de données (local vs Cloud Storage)
+const isCloudRun = process.env.NODE_ENV === 'production';
+const dataPath = isCloudRun && fs.existsSync('/app/data') ? '/app/data' : path.join(__dirname, 'data');
+
+console.log(`📁 Utilisation du stockage: ${dataPath}`);
+console.log(`🌐 Environnement: ${isCloudRun ? 'Cloud Run' : 'Local'}`);
+
+// Créer le dossier data s'il n'existe pas
+if (!fs.existsSync(dataPath)) {
+  fs.mkdirSync(dataPath, { recursive: true });
+  console.log(`📂 Dossier de données créé: ${dataPath}`);
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -259,15 +272,21 @@ app.get('/', requireAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-const STOCK_FILE = './data/stock.json';
-const LOCATIONS_FILE = './data/locations.json';
+// Configuration des fichiers de données avec stockage persistant
+const STOCK_FILE = path.join(dataPath, 'stock.json');
+const LOCATIONS_FILE = path.join(dataPath, 'locations.json');
 
 function loadData(file) {
-  if (!fs.existsSync(file)) return [];
+  if (!fs.existsSync(file)) {
+    console.log(`📄 Création du fichier: ${file}`);
+    return [];
+  }
+  console.log(`📖 Lecture du fichier: ${file}`);
   return JSON.parse(fs.readFileSync(file));
 }
 
 function saveData(file, data) {
+  console.log(`💾 Sauvegarde dans: ${file}`);
   fs.writeFileSync(file, JSON.stringify(data, null, 2));
 }
 
