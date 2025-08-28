@@ -65,6 +65,7 @@ jobs:
           --set-env-vars EMAIL_USER="${{ secrets.EMAIL_USER }}" \
           --set-env-vars EMAIL_PASS="${{ secrets.EMAIL_PASS }}" \
           --set-env-vars ADMIN_EMAIL="${{ secrets.ADMIN_EMAIL }}" \
+          --set-env-vars ADMIN_USERS="${{ secrets.ADMIN_USERS }}" \
           --add-volume name=data-volume,type=cloud-storage,bucket=location-app-data-$PROJECT_ID \
           --add-volume-mount volume=data-volume,mount-path=/app/data \
           --memory 512Mi \

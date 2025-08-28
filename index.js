@@ -43,21 +43,29 @@ app.use(session({
 // Middleware pour parser JSON
 app.use(express.json());
 
-// Utilisateurs (à déplacer vers une base de données en production)
-const users = [
-  {
-    id: 1,
-    username: 'admin',
-    password: bcrypt.hashSync('admin123', 10), // Hash du mot de passe
-    role: 'admin'
-  },
-  {
-    id: 2,
-    username: 'user',
-    password: bcrypt.hashSync('password', 10), // Identifiants alternatifs
-    role: 'admin'
-  },
-];
+// Fonction pour charger les utilisateurs depuis les variables d'environnement
+function loadUsersFromEnv() {
+  const adminUsers = process.env.ADMIN_USERS || 'admin:admin123';
+  const users = [];
+  
+  adminUsers.split(',').forEach((userString, index) => {
+    const [username, password] = userString.trim().split(':');
+    if (username && password) {
+      users.push({
+        id: index + 1,
+        username: username.trim(),
+        password: bcrypt.hashSync(password.trim(), 10),
+        role: 'admin'
+      });
+    }
+  });
+  
+  console.log(`👥 ${users.length} utilisateur(s) admin chargé(s) depuis l'environnement`);
+  return users;
+}
+
+// Charger les utilisateurs depuis les variables d'environnement
+const users = loadUsersFromEnv();
 
 // Middleware d'authentification
 function requireAuth(req, res, next) {
