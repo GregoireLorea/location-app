@@ -10,14 +10,20 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Configuration des sessions
+// Configuration pour Cloud Run - Trust proxy
+app.set('trust proxy', true);
+
+// Configuration des sessions pour Cloud Run
 app.use(session({
   secret: process.env.SESSION_SECRET || 'location-manager-secret-key-change-in-production',
-  resave: false,
-  saveUninitialized: false,
+  resave: true,
+  saveUninitialized: true,
+  name: 'sessionId', // Nom explicite du cookie
   cookie: { 
-    secure: process.env.NODE_ENV === 'production', // HTTPS en production
-    maxAge: 24 * 60 * 60 * 1000 // 24 heures
+    secure: false, // Cloud Run termine SSL, l'app reçoit du HTTP
+    httpOnly: true, // Sécurité contre XSS
+    maxAge: 24 * 60 * 60 * 1000, // 24 heures
+    sameSite: 'lax' // Permet les redirections cross-origin
   }
 }));
 
@@ -165,6 +171,18 @@ app.post('/auth/login', async (req, res) => {
     req.session.role = user.role;
     
     console.log('Connexion réussie pour:', username);
+    console.log('Session créée:', req.session);
+    console.log('Session ID:', req.sessionID);
+    
+    // Sauvegarder explicitement la session
+    req.session.save((err) => {
+      if (err) {
+        console.error('Erreur sauvegarde session:', err);
+      } else {
+        console.log('Session sauvegardée avec succès');
+      }
+    });
+    
     res.json({ 
       success: true, 
       message: 'Connexion réussie',
@@ -202,6 +220,10 @@ app.post('/auth/logout', (req, res) => {
 
 // Route pour vérifier le statut de connexion
 app.get('/auth/status', (req, res) => {
+  console.log('Vérification statut auth - Session:', req.session);
+  console.log('Session ID:', req.sessionID);
+  console.log('Headers:', req.headers);
+  
   if (req.session && req.session.userId) {
     const user = users.find(u => u.id === req.session.userId);
     res.json({ 
@@ -215,6 +237,21 @@ app.get('/auth/status', (req, res) => {
   } else {
     res.json({ authenticated: false });
   }
+});
+
+// Route de debug pour Cloud Run
+app.get('/debug', (req, res) => {
+  res.json({
+    session: req.session,
+    sessionID: req.sessionID,
+    cookies: req.headers.cookie,
+    headers: req.headers,
+    ip: req.ip,
+    ips: req.ips,
+    protocol: req.protocol,
+    secure: req.secure,
+    environment: process.env.NODE_ENV || 'development'
+  });
 });
 
 // Route pour servir index.html à la racine (avec authentification)

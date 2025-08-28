@@ -228,19 +228,42 @@
             hideError();
 
             try {
+                console.log('Tentative de connexion avec:', { username });
+                
                 const response = await fetch('/auth/login', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
+                    credentials: 'include', // Important pour les cookies de session
                     body: JSON.stringify({ username, password })
                 });
 
                 const result = await response.json();
+                console.log('Réponse du serveur:', result);
 
                 if (response.ok && result.success) {
-                    // Connexion réussie, rediriger vers le dashboard
-                    window.location.href = '/';
+                    console.log('Connexion réussie, redirection...');
+                    
+                    // Attendre un peu pour que la session soit bien enregistrée
+                    setTimeout(() => {
+                        // Vérifier le statut avant redirection
+                        fetch('/auth/status', { credentials: 'include' })
+                            .then(resp => resp.json())
+                            .then(status => {
+                                console.log('Statut auth après login:', status);
+                                if (status.authenticated) {
+                                    window.location.href = '/';
+                                } else {
+                                    showError('Erreur de session, veuillez réessayer');
+                                }
+                            })
+                            .catch(err => {
+                                console.error('Erreur vérification status:', err);
+                                // Rediriger quand même
+                                window.location.href = '/';
+                            });
+                    }, 500);
                 } else {
                     showError(result.message || 'Identifiants incorrects');
                 }
@@ -269,6 +292,22 @@
 
         // Focus automatique sur le champ utilisateur
         document.getElementById('username').focus();
+
+        // Vérifier si déjà connecté au chargement
+        window.addEventListener('load', async () => {
+            try {
+                const response = await fetch('/auth/status', { credentials: 'include' });
+                const result = await response.json();
+                console.log('Statut auth au chargement:', result);
+                
+                if (result.authenticated) {
+                    console.log('Déjà connecté, redirection...');
+                    window.location.href = '/';
+                }
+            } catch (error) {
+                console.log('Pas encore connecté ou erreur:', error);
+            }
+        });
 
         // Gérer la touche Entrée
         document.addEventListener('keypress', (e) => {
