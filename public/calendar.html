@@ -90,19 +90,31 @@
 
     async function loadAllData() {
       try {
-        const [stockResponse, locationsResponse] = await Promise.all([
-          fetch('/stock'),
-          fetch('/locations')
-        ]);
+        console.log("Chargement des données du calendrier...");
+        const response = await fetch('/calendar/data');
         
-        stockData = await stockResponse.json();
-        locationsData = await locationsResponse.json();
+        if (!response.ok) {
+          throw new Error(`Erreur HTTP: ${response.status}`);
+        }
         
+        const data = await response.json();
+        stockData = data.stock;
+        locationsData = data.locations;
+        
+        console.log("Données chargées:", { 
+          stock: stockData.length, 
+          locations: locationsData.length 
+        });
+        
+        initializeCalendar();
         populateItemFilter();
         refreshCalendar();
         updateDetailedPlanning();
       } catch (error) {
         console.error('Erreur lors du chargement:', error);
+        // Afficher un message d'erreur à l'utilisateur
+        document.getElementById('calendar').innerHTML = 
+          '<div class="error-message">❌ Erreur de chargement des données. Veuillez vous reconnecter.</div>';
       }
     }
 
@@ -151,20 +163,14 @@
       }
       
       if (statusFilter) {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        
         filteredLocations = filteredLocations.filter(location => {
-          const fromDate = new Date(location.from);
-          const toDate = new Date(location.to);
-          
           switch (statusFilter) {
             case 'upcoming':
-              return fromDate > today;
+              return ['planned', 'pending'].includes(location.status);
             case 'active':
-              return fromDate <= today && toDate >= today;
+              return location.status === 'ongoing';
             case 'past':
-              return toDate < today;
+              return location.status === 'finished';
             default:
               return true;
           }
@@ -180,16 +186,36 @@
         const fromDate = new Date(location.from);
         const toDate = new Date(location.to);
         
+        // Utiliser le statut réel de la location plutôt que juste les dates
         let className = 'past';
-        if (fromDate > today) {
-          className = 'upcoming';
-        } else if (toDate >= today) {
-          className = 'active';
+        let displayTitle = `${location.clientName || location.customerName || 'Client'} - ${itemName}`;
+        
+        switch (location.status) {
+          case 'planned':
+          case 'pending':
+            className = 'upcoming';
+            displayTitle = `[Planifié] ${displayTitle}`;
+            break;
+          case 'ongoing':
+            className = 'active';
+            displayTitle = `[En cours] ${displayTitle}`;
+            break;
+          case 'finished':
+            className = 'past';
+            displayTitle = `[Terminé] ${displayTitle}`;
+            break;
+          default:
+            // Fallback sur les dates si le statut n'est pas défini
+            if (fromDate > today) {
+              className = 'upcoming';
+            } else if (toDate >= today) {
+              className = 'active';
+            }
         }
 
         return {
           id: location.id,
-          title: `${location.clientName} - ${itemName}`,
+          title: displayTitle,
           start: location.from,
           end: getNextDay(location.to), // FullCalendar attend la date de fin + 1 jour pour les événements "all day"
           className: `event-${className}`,
@@ -222,10 +248,15 @@
         <h3>Détails de la réservation</h3>
         <div class="event-details">
           <div class="detail-section">
+            <h4>Statut</h4>
+            <p><strong class="status-${location.status}">${getStatusLabel(location.status)}</strong></p>
+          </div>
+          
+          <div class="detail-section">
             <h4>Client</h4>
-            <p><strong>${location.clientName}</strong></p>
-            ${location.clientPhone ? `<p>📞 ${location.clientPhone}</p>` : ''}
-            ${location.clientEmail ? `<p>✉️ ${location.clientEmail}</p>` : ''}
+            <p><strong>${location.clientName || location.customerName || 'Client inconnu'}</strong></p>
+            ${location.contactPhone || location.customerPhone ? `<p>📞 ${location.contactPhone || location.customerPhone}</p>` : ''}
+            ${location.contactEmail || location.customerEmail ? `<p>✉️ ${location.contactEmail || location.customerEmail}</p>` : ''}
             ${location.messengerHandle ? `<p>💬 ${location.messengerHandle}</p>` : ''}
             ${location.preferredContact ? `<p><small>Contact préféré: ${location.preferredContact}</small></p>` : ''}
           </div>
@@ -247,30 +278,24 @@
             ${location.deliveryCost ? `<p><strong>Livraison:</strong> ${location.deliveryCost}€</p>` : ''}
           </div>
           
-          ${location.eventDescription ? `
+          ${location.requestComment || location.comments ? `
             <div class="detail-section">
-              <h4>Événement</h4>
-              <p>${location.eventDescription}</p>
+              <h4>Commentaires</h4>
+              <p>${location.requestComment || location.comments}</p>
             </div>
           ` : ''}
           
-          ${location.deliveryAddress ? `
+          ${location.deliveryAddress || location.customerAddress ? `
             <div class="detail-section">
-              <h4>Livraison</h4>
-              <p><strong>Adresse:</strong> ${location.deliveryAddress}</p>
-              <p><strong>Mode:</strong> ${location.deliveryMethod === 'delivery' ? 'Livraison' : 'Récupération sur place'}</p>
-            </div>
-          ` : ''}
-          
-          ${location.clientNotes ? `
-            <div class="detail-section">
-              <h4>Notes</h4>
-              <p>${location.clientNotes}</p>
+              <h4>Adresse</h4>
+              <p>${location.deliveryAddress || location.customerAddress}</p>
             </div>
           ` : ''}
         </div>
         
         <div class="modal-actions">
+          ${location.status === 'planned' ? `<button onclick="startLocationFromCalendar(${location.id})" class="btn-success">Démarrer</button>` : ''}
+          ${location.status === 'ongoing' ? `<button onclick="finishLocationFromCalendar(${location.id})" class="btn-warning">Terminer</button>` : ''}
           <button onclick="editLocationFromCalendar(${location.id})" class="btn-primary">Modifier</button>
           <button onclick="deleteLocationFromCalendar(${location.id})" class="btn-delete">Supprimer</button>
         </div>
@@ -282,6 +307,50 @@
 
     function closeEventModal() {
       document.getElementById('eventModal').style.display = 'none';
+    }
+
+    function getStatusLabel(status) {
+      switch (status) {
+        case 'planned': return '📅 Planifié';
+        case 'pending': return '⏳ En attente';
+        case 'ongoing': return '🔄 En cours';
+        case 'finished': return '✅ Terminé';
+        default: return status || 'Inconnu';
+      }
+    }
+
+    async function startLocationFromCalendar(locationId) {
+      if (!confirm('Démarrer cette réservation ?')) return;
+
+      try {
+        const response = await fetch(`/locations/${locationId}/start`, { method: 'PUT' });
+        if (response.ok) {
+          closeEventModal();
+          loadAllData();
+        } else {
+          alert('Erreur lors du démarrage de la réservation');
+        }
+      } catch (error) {
+        console.error('Erreur lors du démarrage:', error);
+        alert('Erreur lors du démarrage de la réservation');
+      }
+    }
+
+    async function finishLocationFromCalendar(locationId) {
+      if (!confirm('Terminer cette réservation ?')) return;
+
+      try {
+        const response = await fetch(`/locations/${locationId}/finish`, { method: 'PUT' });
+        if (response.ok) {
+          closeEventModal();
+          loadAllData();
+        } else {
+          alert('Erreur lors de la finalisation de la réservation');
+        }
+      } catch (error) {
+        console.error('Erreur lors de la finalisation:', error);
+        alert('Erreur lors de la finalisation de la réservation');
+      }
     }
 
     function editLocationFromCalendar(locationId) {
@@ -411,7 +480,7 @@
             return;
           }
           
-          initializeCalendar();
+          // Charger les données AVANT d'initialiser le calendrier
           loadAllData();
           console.log("Calendrier initialisé avec succès !");
         } catch (error) {

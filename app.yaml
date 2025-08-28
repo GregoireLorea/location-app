@@ -1,0 +1,20 @@
+runtime: nodejs20
+
+env_variables:
+  NODE_ENV: production
+  EMAIL_USER: carpestudentem@gmail.com
+  EMAIL_PASS: pjssbigwitdepkaa
+  ADMIN_EMAIL: gregoire.lorea@gmail.com
+
+automatic_scaling:
+  min_instances: 1
+  max_instances: 5
+
+handlers:
+- url: /uploads
+  static_dir: public/uploads
+  secure: always
+
+- url: /.*
+  script: auto
+  secure: always

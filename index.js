@@ -4,17 +4,19 @@ const fs = require('fs');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const multer = require('multer');
+const emailService = require('./services/emailService');
+require('dotenv').config();
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 // Configuration des sessions
 app.use(session({
-  secret: 'location-manager-secret-key-change-in-production',
+  secret: process.env.SESSION_SECRET || 'location-manager-secret-key-change-in-production',
   resave: false,
   saveUninitialized: false,
   cookie: { 
-    secure: false, // true en HTTPS
+    secure: process.env.NODE_ENV === 'production', // HTTPS en production
     maxAge: 24 * 60 * 60 * 1000 // 24 heures
   }
 }));
@@ -121,6 +123,7 @@ const upload = multer({
     fileSize: 5 * 1024 * 1024 // 5MB max
   }
 });
+
 
 // Route de connexion
 app.post('/auth/login', async (req, res) => {
@@ -236,35 +239,112 @@ function saveData(file, data) {
 
 function isAvailable(itemId, from, to, qty) {
   const stock = loadData(STOCK_FILE).find(i => i.id === itemId);
-  // Ne prendre en compte que les locations en cours (ongoing)
-  const allBookings = loadData(LOCATIONS_FILE).filter(loc => loc.itemId === itemId && loc.status === 'ongoing');
+  if (!stock) {
+    console.log(`❌ Article ${itemId} non trouvé dans le stock`);
+    return false;
+  }
+  
+  // Prendre en compte toutes les réservations actives (planned, ongoing, pending)
+  const allBookings = loadData(LOCATIONS_FILE).filter(loc => 
+    loc.itemId === itemId && 
+    ['planned', 'ongoing', 'pending'].includes(loc.status)
+  );
+  
+  console.log(`🔍 Article ${itemId} (${stock.name}): ${allBookings.length} réservations actives`);
+  
   const overlap = allBookings.filter(loc => {
-    return (
+    const hasOverlap = (
       (new Date(from) <= new Date(loc.to)) &&
       (new Date(to) >= new Date(loc.from))
     );
+    if (hasOverlap) {
+      console.log(`📅 Conflit trouvé: ${loc.from} -> ${loc.to} (qty: ${loc.qty || 1})`);
+    }
+    return hasOverlap;
   });
+  
   const qtyBooked = overlap.reduce((sum, l) => sum + (l.qty || 1), 0);
-  return (stock.qty - qtyBooked) >= qty;
+  const available = (stock.qty - qtyBooked);
+  const isAvailableResult = available >= qty;
+  
+  console.log(`📊 Stock total: ${stock.qty}, Réservé: ${qtyBooked}, Disponible: ${available}, Demandé: ${qty}, Résultat: ${isAvailableResult}`);
+  
+  return isAvailableResult;
 }
 
 app.get('/stock', requireAuth, (req, res) => {
+  const stock = loadData(STOCK_FILE);
+  const locations = loadData(LOCATIONS_FILE);
+  
+  // Enrichir chaque article avec les informations de réservation
+  const enrichedStock = stock.map(item => {
+    // Calculer les réservations actives pour cet article
+    const activeBookings = locations.filter(loc => 
+      loc.itemId === item.id && 
+      ['planned', 'ongoing', 'pending'].includes(loc.status)
+    );
+    
+    // Calculer la quantité totale réservée
+    const totalBooked = activeBookings.reduce((sum, loc) => sum + (loc.qty || 1), 0);
+    
+    // Calculer la disponibilité
+    const available = Math.max(0, item.qty - totalBooked);
+    
+    return {
+      ...item,
+      totalBooked,
+      available,
+      bookings: activeBookings.map(booking => ({
+        id: booking.id,
+        clientName: booking.clientName || booking.customerName || 'Client inconnu',
+        from: booking.from,
+        to: booking.to,
+        qty: booking.qty || 1,
+        status: booking.status
+      }))
+    };
+  });
+  
+  res.json(enrichedStock);
+});
+
+// Endpoint simple pour le stock (sans calculs de réservation)
+app.get('/stock/simple', requireAuth, (req, res) => {
   res.json(loadData(STOCK_FILE));
 });
 
 // Endpoint public pour le formulaire de demande (sans authentification)
 app.get('/public/stock', (req, res) => {
   const stock = loadData(STOCK_FILE);
-  // Retourner seulement les infos nécessaires pour le formulaire public
-  const publicStock = stock.map(item => ({
-    id: item.id,
-    name: item.name,
-    price: item.price,
-    qty: item.qty,
-    description: item.description,
-    photo: item.photo,
-    caution: item.caution
-  }));
+  const locations = loadData(LOCATIONS_FILE);
+  
+  // Retourner les infos nécessaires pour le formulaire public avec disponibilité
+  const publicStock = stock.map(item => {
+    // Calculer les réservations actives pour cet article
+    const activeBookings = locations.filter(loc => 
+      loc.itemId === item.id && 
+      ['planned', 'ongoing', 'pending'].includes(loc.status)
+    );
+    
+    // Calculer la quantité totale réservée
+    const totalBooked = activeBookings.reduce((sum, loc) => sum + (loc.qty || 1), 0);
+    
+    // Calculer la disponibilité
+    const available = Math.max(0, item.qty - totalBooked);
+    
+    return {
+      id: item.id,
+      name: item.name,
+      price: item.price,
+      qty: item.qty,
+      available: available,
+      totalBooked: totalBooked,
+      description: item.description,
+      photo: item.photo,
+      caution: item.caution
+    };
+  });
+  
   res.json(publicStock);
 });
 
@@ -298,9 +378,9 @@ app.post('/public/check-availability', (req, res) => {
         continue;
       }
 
-      // Trouver les conflits pour ce matériel (seulement les locations ongoing)
+      // Trouver les conflits pour ce matériel (toutes les réservations actives)
       const conflicts = locations.filter(location => {
-        if (location.itemId !== itemId || location.status !== 'ongoing') {
+        if (location.itemId !== itemId || !['planned', 'ongoing', 'pending'].includes(location.status)) {
           return false;
         }
 
@@ -458,7 +538,7 @@ app.get('/locations', requireAuth, (req, res) => {
   res.json(loadData(LOCATIONS_FILE));
 });
 
-app.post('/locations', requireAuth, (req, res) => {
+app.post('/locations', requireAuth, async (req, res) => {
   const locations = loadData(LOCATIONS_FILE);
   const { 
     itemId, 
@@ -482,7 +562,7 @@ app.post('/locations', requireAuth, (req, res) => {
     return res.status(400).json({ error: "Objet non disponible à ces dates" });
   }
 
-  locations.push({ 
+  const newLocation = { 
     id: Date.now(), 
     itemId, 
     from, 
@@ -500,8 +580,47 @@ app.post('/locations', requireAuth, (req, res) => {
     messengerHandle: messengerHandle || '',
     requestComment: requestComment || '',
     status: 'planned'
-  });
+  };
+  
+  locations.push(newLocation);
   saveData(LOCATIONS_FILE, locations);
+  
+  // 🎯 ENVOYER LES EMAILS DE CONFIRMATION (SI EMAIL CLIENT FOURNI)
+  if (contactEmail && contactEmail.trim()) {
+    try {
+      const stock = loadData(STOCK_FILE);
+      const item = stock.find(s => s.id === itemId);
+      
+      if (item) {
+        const client = {
+          clientName: clientName || `${clientFirstName} ${clientLastName}`.trim(),
+          contactEmail: contactEmail,
+          contactPhone: contactPhone || '',
+          associationName: associationName || '',
+          from,
+          to,
+          requestComment: requestComment || '',
+          source: 'admin-creation'
+        };
+        
+        const items = [{
+          location: newLocation,
+          item: item
+        }];
+        
+        // Envoyer les emails en parallèle
+        await Promise.all([
+          emailService.sendAdminNotification(client, items),
+          emailService.sendClientConfirmation(client, items)
+        ]);
+        console.log('📧 Emails (admin + client) envoyés pour création manuelle');
+      }
+    } catch (emailError) {
+      console.error('❌ Erreur envoi emails création manuelle:', emailError);
+      // Ne pas faire échouer la création si l'email échoue
+    }
+  }
+  
   res.json({ ok: true });
 });
 
@@ -532,8 +651,11 @@ app.put('/locations/:id', requireAuth, (req, res) => {
     return res.status(404).json({ error: "Réservation non trouvée" });
   }
   
-  // Vérifier la disponibilité en excluant la réservation actuelle et ne prenant en compte que les locations ongoing
-  const otherLocations = locations.filter(loc => loc.id !== locationId && loc.status === 'ongoing');
+  // Vérifier la disponibilité en excluant la réservation actuelle et en prenant en compte toutes les réservations actives
+  const otherLocations = locations.filter(loc => 
+    loc.id !== locationId && 
+    ['planned', 'ongoing', 'pending'].includes(loc.status)
+  );
   const stock = loadData(STOCK_FILE).find(i => i.id === itemId);
   const overlap = otherLocations.filter(loc => loc.itemId === itemId && (
     (new Date(from) <= new Date(loc.to)) &&
@@ -616,200 +738,11 @@ app.put('/locations/:id/start', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-// Endpoint webhook pour recevoir les demandes de location depuis WPForms
-app.post('/webhook/wpforms', express.raw({type: 'application/json'}), (req, res) => {
-  try {
-    console.log('Webhook WPForms reçu:', req.body);
-    
-    // Parser les données du webhook
-    const formData = JSON.parse(req.body);
-    
-    // Mapper les champs WPForms vers notre structure
-    const locationRequest = {
-      clientLastName: formData.lastname || formData.nom || '',
-      clientFirstName: formData.firstname || formData.prenom || '',
-      clientName: `${formData.firstname || formData.prenom || ''} ${formData.lastname || formData.nom || ''}`.trim(),
-      associationName: formData.association || formData.organisation || '',
-      contactPhone: formData.phone || formData.telephone || '',
-      contactEmail: formData.email || formData.mail || '',
-      preferredContact: formData.contact_pref || 'email',
-      messengerHandle: formData.messenger || '',
-      from: formData.date_debut || formData.from_date || '',
-      fromTime: formData.heure_debut || formData.from_time || '',
-      to: formData.date_fin || formData.to_date || '',
-      toTime: formData.heure_fin || formData.to_time || '',
-      requestComment: formData.commentaire || formData.message || formData.comment || '',
-      itemId: parseInt(formData.materiel_id || formData.item_id || 1), // ID par défaut
-      qty: parseInt(formData.quantite || formData.qty || 1),
-      status: 'planned', // Nouveau statut par défaut
-      source: 'wpforms' // Marquer la source
-    };
-
-    // Sauvegarder la demande de location
-    const locations = loadData(LOCATIONS_FILE);
-    const newLocation = {
-      id: Date.now(),
-      ...locationRequest
-    };
-    
-    locations.push(newLocation);
-    saveData(LOCATIONS_FILE, locations);
-    
-    console.log('Nouvelle demande de location créée automatiquement:', newLocation);
-    
-    res.status(200).json({ 
-      success: true, 
-      message: 'Demande de location reçue et enregistrée',
-      locationId: newLocation.id 
-    });
-    
-  } catch (error) {
-    console.error('Erreur webhook WPForms:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Erreur lors du traitement de la demande' 
-    });
-  }
-});
-
-// Endpoint pour importer des demandes depuis un CSV (WPForms export)
-app.post('/import/csv', express.json({ limit: '50mb' }), (req, res) => {
-  try {
-    const { csvData } = req.body;
-    console.log('Import CSV reçu');
-    
-    // Parser le CSV (format WPForms)
-    const lines = csvData.split('\n');
-    const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
-    const locations = loadData(LOCATIONS_FILE);
-    let imported = 0;
-    
-    for (let i = 1; i < lines.length; i++) {
-      if (!lines[i].trim()) continue;
-      
-      const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''));
-      const row = {};
-      
-      headers.forEach((header, index) => {
-        row[header] = values[index] || '';
-      });
-      
-      // Mapper les colonnes WPForms vers notre structure
-      const locationRequest = {
-        clientLastName: row['Nom'] || row['Last Name'] || '',
-        clientFirstName: row['Prénom'] || row['First Name'] || '',
-        clientName: `${row['Prénom'] || row['First Name'] || ''} ${row['Nom'] || row['Last Name'] || ''}`.trim(),
-        associationName: row['Association'] || row['Organisation'] || '',
-        contactPhone: row['Téléphone'] || row['Phone'] || '',
-        contactEmail: row['Email'] || row['E-mail'] || '',
-        preferredContact: row['Contact préféré'] || 'email',
-        messengerHandle: row['Messenger'] || '',
-        from: formatDate(row['Date début'] || row['Date de début'] || ''),
-        fromTime: row['Heure début'] || '',
-        to: formatDate(row['Date fin'] || row['Date de fin'] || ''),
-        toTime: row['Heure fin'] || '',
-        requestComment: row['Commentaire'] || row['Message'] || '',
-        itemId: findItemId(row['Matériel'] || row['Article'] || ''),
-        qty: parseInt(row['Quantité'] || row['Qty'] || '1'),
-        status: 'planned',
-        source: 'csv_import'
-      };
-
-      const newLocation = {
-        id: Date.now() + i, // Éviter les doublons d'ID
-        ...locationRequest
-      };
-      
-      locations.push(newLocation);
-      imported++;
-    }
-    
-    saveData(LOCATIONS_FILE, locations);
-    
-    res.status(200).json({ 
-      success: true, 
-      message: `${imported} demandes importées avec succès`,
-      imported 
-    });
-    
-  } catch (error) {
-    console.error('Erreur import CSV:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Erreur lors de l\'import CSV' 
-    });
-  }
-});
-
-// Helper function pour formater les dates
-function formatDate(dateStr) {
-  if (!dateStr) return '';
-  
-  // Essayer différents formats de date
-  const formats = [
-    /(\d{1,2})\/(\d{1,2})\/(\d{4})/, // DD/MM/YYYY
-    /(\d{4})-(\d{1,2})-(\d{1,2})/, // YYYY-MM-DD
-    /(\d{1,2})-(\d{1,2})-(\d{4})/, // DD-MM-YYYY
-  ];
-  
-  for (const format of formats) {
-    const match = dateStr.match(format);
-    if (match) {
-      if (format === formats[1]) { // YYYY-MM-DD
-        return `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
-      } else { // DD/MM/YYYY ou DD-MM-YYYY
-        return `${match[3]}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}`;
-      }
-    }
-  }
-  
-  return dateStr;
-}
-
-// Helper function pour trouver l'ID du matériel par nom
-function findItemId(itemName) {
-  if (!itemName) return 1;
-  
-  const stock = loadData(STOCK_FILE);
-  const item = stock.find(s => 
-    s.name.toLowerCase().includes(itemName.toLowerCase()) ||
-    itemName.toLowerCase().includes(s.name.toLowerCase())
-  );
-  
-  return item ? item.id : 1; // ID par défaut si non trouvé
-}
-
-// Endpoint pour synchroniser avec l'API WPForms (nécessite WPForms Pro)
-app.post('/sync/wpforms', express.json(), (req, res) => {
-  try {
-    const { wpformsApiKey, siteUrl, formId } = req.body;
-    
-    if (!wpformsApiKey || !siteUrl || !formId) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Paramètres manquants (apiKey, siteUrl, formId)' 
-      });
-    }
-    
-    // Note: Cette fonction nécessiterait une implémentation complète avec axios
-    // pour récupérer les données depuis l'API WPForms
-    
-    res.status(200).json({ 
-      success: true, 
-      message: 'Synchronisation WPForms configurée (fonction à implémenter)' 
-    });
-    
-  } catch (error) {
-    console.error('Erreur sync WPForms:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Erreur lors de la synchronisation' 
-    });
-  }
-});
+// Stockage temporaire pour grouper les demandes
+const pendingNotifications = new Map();
 
 // Endpoint pour traiter les emails entrants depuis Zapier
-app.post('/webhook/email', express.json(), (req, res) => {
+app.post('/webhook/email', express.json(), async (req, res) => {
   try {
     console.log('Email webhook reçu depuis Zapier:', req.body);
     
@@ -827,14 +760,14 @@ app.post('/webhook/email', express.json(), (req, res) => {
       preferredContact: emailData.contact_pref || 'email',
       messengerHandle: emailData.messenger || '',
       from: emailData.date_debut || emailData.du || '',
-      fromTime: '',
+      fromTime: emailData.heure_debut || '',
       to: emailData.date_fin || emailData.au || '',
-      toTime: '',
+      toTime: emailData.heure_fin || '',
       requestComment: emailData.commentaire || emailData.message || '',
-      itemId: parseInt(emailData.materiel_id || 1), // ID par défaut, à mapper selon vos articles
+      itemId: parseInt(emailData.materiel_id || 1),
       qty: parseInt(emailData.quantite || emailData.qty || 1),
-      status: 'planned', // Statut par défaut pour validation
-      source: 'email-zapier' // Marquer la source
+      status: 'planned',
+      source: 'email-zapier'
     };
 
     // Sauvegarder la demande de location
@@ -848,6 +781,51 @@ app.post('/webhook/email', express.json(), (req, res) => {
     saveData(LOCATIONS_FILE, locations);
     
     console.log('Nouvelle demande de location créée depuis email:', newLocation);
+    
+    // 🎯 GROUPER LES NOTIFICATIONS PAR EMAIL
+    const clientKey = `${emailData.email || 'unknown'}_${emailData.date_debut || 'nodate'}`;
+    
+    if (!pendingNotifications.has(clientKey)) {
+      pendingNotifications.set(clientKey, {
+        client: locationRequest,
+        items: [],
+        timer: null
+      });
+    }
+    
+    // Ajouter l'article à la liste
+    const stock = loadData(STOCK_FILE);
+    const item = stock.find(s => s.id === newLocation.itemId) || {
+      name: emailData.materiel_nom || 'Article non identifié',
+      price: 0,
+      caution: 0
+    };
+    
+    pendingNotifications.get(clientKey).items.push({
+      location: newLocation,
+      item: item
+    });
+    
+    // Annuler le timer précédent et en créer un nouveau (attendre 5 secondes pour d'autres articles)
+    if (pendingNotifications.get(clientKey).timer) {
+      clearTimeout(pendingNotifications.get(clientKey).timer);
+    }
+    
+    pendingNotifications.get(clientKey).timer = setTimeout(async () => {
+      const notificationData = pendingNotifications.get(clientKey);
+      pendingNotifications.delete(clientKey);
+      
+      try {
+        // Envoyer les emails en parallèle
+        await Promise.all([
+          emailService.sendAdminNotification(notificationData.client, notificationData.items),
+          emailService.sendClientConfirmation(notificationData.client, notificationData.items)
+        ]);
+        console.log(`📧 Emails (admin + client) envoyés pour ${notificationData.items.length} article(s)`);
+      } catch (emailError) {
+        console.error('❌ Erreur envoi emails depuis webhook:', emailError);
+      }
+    }, 5000); // Attendre 5 secondes
     
     res.status(200).json({ 
       success: true, 
@@ -864,7 +842,145 @@ app.post('/webhook/email', express.json(), (req, res) => {
   }
 });
 
+// Endpoint public pour créer une demande de location
+app.post('/public/locations', async (req, res) => {
+  try {
+    const {
+      itemId,
+      qty,
+      from,
+      to,
+      customerName,
+      customerEmail,
+      customerPhone,
+      customerAddress,
+      comments
+    } = req.body;
+
+    // Validation des données
+    if (!itemId || !qty || !from || !to || !customerName || !customerEmail) {
+      return res.status(400).json({
+        error: 'Tous les champs obligatoires doivent être renseignés'
+      });
+    }
+
+    // Vérifier la disponibilité
+    if (!isAvailable(itemId, from, to, qty)) {
+      return res.status(400).json({
+        error: 'Cet article n\'est pas disponible pour ces dates'
+      });
+    }
+
+    // Récupérer les infos de l'article
+    const stock = loadData(STOCK_FILE);
+    const item = stock.find(s => s.id === itemId);
+    if (!item) {
+      return res.status(404).json({ error: 'Article non trouvé' });
+    }
+
+    // Calculer les totaux
+    const totalPrice = item.price * qty;
+    const totalCaution = item.caution * qty;
+
+    // Créer la location
+    const locations = loadData(LOCATIONS_FILE);
+    const newLocation = {
+      id: Date.now(),
+      itemId: parseInt(itemId),
+      qty: parseInt(qty),
+      from,
+      to,
+      customerName,
+      customerEmail,
+      customerPhone,
+      customerAddress,
+      comments,
+      totalPrice,
+      totalCaution,
+      status: 'planned',
+      createdAt: new Date().toISOString()
+    };
+
+    locations.push(newLocation);
+    saveData(LOCATIONS_FILE, locations);
+
+    // 🎯 ENVOYER LES EMAILS DE NOTIFICATION (ADMIN + CLIENT)
+    const client = {
+      clientName: customerName,
+      contactEmail: customerEmail,
+      contactPhone: customerPhone,
+      from,
+      to,
+      requestComment: comments,
+      source: 'formulaire-public'
+    };
+    
+    const items = [{
+      location: newLocation,
+      item: item
+    }];
+    
+    // Envoyer les emails en parallèle
+    try {
+      await Promise.all([
+        emailService.sendAdminNotification(client, items),
+        emailService.sendClientConfirmation(client, items)
+      ]);
+      console.log('📧 Emails (admin + client) envoyés avec succès');
+    } catch (emailError) {
+      console.error('❌ Erreur envoi emails:', emailError);
+      // Ne pas faire échouer la création de location si l'email échoue
+    }
+
+    res.json({
+      success: true,
+      message: 'Demande de location créée avec succès',
+      location: newLocation
+    });
+
+  } catch (error) {
+    console.error('Erreur création location:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Endpoint pour le calendrier (authentifié, avec données enrichies)
+app.get('/calendar/data', requireAuth, (req, res) => {
+  try {
+    const stock = loadData(STOCK_FILE);
+    const locations = loadData(LOCATIONS_FILE);
+    
+    // Enrichir les données de location avec les informations des articles
+    const enrichedLocations = locations.map(location => {
+      const item = stock.find(s => s.id === location.itemId);
+      return {
+        ...location,
+        itemName: item ? item.name : `Article ${location.itemId}`,
+        itemPrice: item ? item.price : 0,
+        itemCaution: item ? item.caution : 0
+      };
+    });
+    
+    res.json({
+      stock: stock,
+      locations: enrichedLocations
+    });
+  } catch (error) {
+    console.error('Erreur chargement données calendrier:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Serveur lancé sur http://localhost:${PORT}`);
   console.log(`Accessible depuis le réseau local sur http://192.168.1.46:${PORT}`);
+  
+  // Initialiser le service email avec les variables d'environnement
+  emailService.initializeEmailService({
+    EMAIL_USER: process.env.EMAIL_USER,
+    EMAIL_PASS: process.env.EMAIL_PASS
+  });
+  
+  // Tester la config email au démarrage
+  emailService.testEmailConfig();
 });

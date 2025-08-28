@@ -1,0 +1,14 @@
+# Fichiers à exclure du déploiement Google Cloud
+.gcloudignore
+.git
+.gitignore
+node_modules/
+*.log
+.env
+.env.local
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+npm-debug.log
