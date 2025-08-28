@@ -107,19 +107,28 @@ function serveWithAuth(req, res, next) {
   next();
 }
 
+// Configuration des chemins pour uploads avec stockage persistant
+const uploadsPath = isCloudRun && fs.existsSync('/app/data') 
+  ? '/app/data/uploads' 
+  : path.join(__dirname, 'public', 'uploads');
+
+console.log(`📸 Stockage uploads: ${uploadsPath}`);
+
+// Créer le dossier uploads s'il n'existe pas
+if (!fs.existsSync(uploadsPath)) {
+  fs.mkdirSync(uploadsPath, { recursive: true });
+  console.log(`📂 Dossier uploads créé: ${uploadsPath}`);
+}
+
 // Servir les fichiers statiques (y compris uploads) AVANT l'authentification
-app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads')));
+app.use('/uploads', express.static(uploadsPath));
 app.use(serveWithAuth);
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Configuration de multer pour l'upload des images
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    const uploadDir = path.join(__dirname, 'public', 'uploads');
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
+    cb(null, uploadsPath);
   },
   filename: function (req, file, cb) {
     // Générer un nom unique avec timestamp
@@ -530,9 +539,12 @@ app.put('/stock/:id', requireAuth, upload.single('photo'), (req, res) => {
     if (req.file) {
       // Supprimer l'ancienne photo si elle existe
       if (photoUrl) {
-        const oldPhotoPath = path.join(__dirname, 'public', photoUrl);
+        const oldPhotoPath = photoUrl.startsWith('/uploads/') 
+          ? path.join(uploadsPath, photoUrl.replace('/uploads/', ''))
+          : path.join(__dirname, 'public', photoUrl);
         if (fs.existsSync(oldPhotoPath)) {
           fs.unlinkSync(oldPhotoPath);
+          console.log(`Ancienne photo supprimée: ${oldPhotoPath}`);
         }
       }
       photoUrl = `/uploads/${req.file.filename}`;
@@ -572,7 +584,9 @@ app.delete('/stock/:id', requireAuth, (req, res) => {
     
     // Supprimer la photo si elle existe
     if (itemToDelete.photo) {
-      const photoPath = path.join(__dirname, 'public', itemToDelete.photo);
+      const photoPath = itemToDelete.photo.startsWith('/uploads/') 
+        ? path.join(uploadsPath, itemToDelete.photo.replace('/uploads/', ''))
+        : path.join(__dirname, 'public', itemToDelete.photo);
       if (fs.existsSync(photoPath)) {
         fs.unlinkSync(photoPath);
         console.log(`Photo supprimée: ${photoPath}`);
