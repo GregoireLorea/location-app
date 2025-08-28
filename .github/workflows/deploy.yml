@@ -60,21 +60,18 @@ jobs:
         ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
         ADMIN_USERS: ${{ secrets.ADMIN_USERS }}
       run: |
-        # Créer un fichier temporaire pour les variables d'environnement
-        cat > /tmp/env-vars.txt << 'EOF'
-        NODE_ENV=production
-        SESSION_SECRET=${SESSION_SECRET}
-        EMAIL_USER=${EMAIL_USER}
-        EMAIL_PASS=${EMAIL_PASS}
-        ADMIN_EMAIL=${ADMIN_EMAIL}
-        ADMIN_USERS=${ADMIN_USERS}
+        # Créer un fichier YAML pour les variables d'environnement
+        cat > /tmp/env-vars.yaml << EOF
+        NODE_ENV: "production"
+        SESSION_SECRET: "${SESSION_SECRET}"
+        EMAIL_USER: "${EMAIL_USER}"
+        EMAIL_PASS: "${EMAIL_PASS}"
+        ADMIN_EMAIL: "${ADMIN_EMAIL}"
+        ADMIN_USERS: "${ADMIN_USERS}"
         EOF
         
-        # Remplacer les variables dans le fichier
-        envsubst < /tmp/env-vars.txt > /tmp/env-vars-final.txt
-        
-        echo "📋 Variables d'environnement configurées:"
-        cat /tmp/env-vars-final.txt | sed 's/=.*/=***/' # Masquer les valeurs sensibles
+        echo "📋 Variables d'environnement configurées (format YAML):"
+        cat /tmp/env-vars.yaml | sed 's/: .*/: "***"/' # Masquer les valeurs sensibles
         
         gcloud run deploy $SERVICE_NAME \
           --image $REGION-docker.pkg.dev/$PROJECT_ID/location-app-repo/location-app:latest \
@@ -82,7 +79,7 @@ jobs:
           --region $REGION \
           --allow-unauthenticated \
           --service-account cloudrun-exec@$PROJECT_ID.iam.gserviceaccount.com \
-          --env-vars-file /tmp/env-vars-final.txt \
+          --env-vars-file /tmp/env-vars.yaml \
           --add-volume name=data-volume,type=cloud-storage,bucket=location-app-data-$PROJECT_ID \
           --add-volume-mount volume=data-volume,mount-path=/app/data \
           --memory 512Mi \
