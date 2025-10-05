@@ -1,6 +1,19 @@
 # Utiliser l'image officielle Node.js 20
 FROM node:20-alpine
 
+# Installer les dépendances système pour Puppeteer et Chrome
+RUN apk add --no-cache \
+    chromium \
+    nss \
+    freetype \
+    freetype-dev \
+    harfbuzz \
+    ca-certificates \
+    ttf-freefont
+
+# Dire à Puppeteer d'utiliser le Chromium installé
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+
 # Définir le répertoire de travail
 WORKDIR /app
 
