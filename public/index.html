@@ -14,8 +14,9 @@
     <ul class="navbar-nav">
       <li><a href="index.html" class="nav-link active">Dashboard</a></li>
       <li><a href="stock.html" class="nav-link">Gestion Stock</a></li>
-      <li><a href="locations.html" class="nav-link">Gestion Locations</a></li>
+      <li><a href="locations.html" class="nav-link">Gestion Locations <span id="pendingBadge" class="notification-badge" style="display: none;"></span></a></li>
       <li><a href="calendar.html" class="nav-link">Calendrier</a></li>
+      <li><a href="documents.html" class="nav-link">📄 Documents</a></li>
       <li><a href="formulaire-location.html" class="nav-link">📝 Demande Public</a></li>
       <li><a href="#" class="nav-link" onclick="logout()" style="color: #e74c3c;">🚪 Déconnexion</a></li>
     </ul>
@@ -125,7 +126,7 @@
         .reduce((sum, location) => {
           const stockItem = stockData.find(item => item.id === location.itemId);
           const price = stockItem ? stockItem.price || 0 : 0;
-          const days = Math.ceil((new Date(location.to) - new Date(location.from)) / (1000 * 60 * 60 * 24)) + 1;
+          const days = Math.round((new Date(location.to) - new Date(location.from)) / (1000 * 60 * 60 * 24)) + 1;
           return sum + (price * days * (location.qty || 1));
         }, 0);
       document.getElementById('monthlyRevenue').textContent = monthlyRevenue.toFixed(0) + '€';
@@ -178,6 +179,34 @@
         </div>
       `).join('');
     }
+
+    // Fonction pour mettre à jour le badge de notification
+    function updatePendingBadge(locationsData) {
+      const pendingCount = locationsData.filter(l => l.status === 'pending').length;
+      const badge = document.getElementById('pendingBadge');
+
+      if (pendingCount > 0) {
+        badge.textContent = pendingCount;
+        badge.style.display = 'inline-block';
+      } else {
+        badge.style.display = 'none';
+      }
+    }
+
+    // Modifier loadDashboardData pour inclure la mise à jour du badge
+    const originalLoadDashboardData = loadDashboardData;
+    loadDashboardData = async function() {
+      await originalLoadDashboardData();
+
+      // Charger les locations pour le badge
+      try {
+        const locationsResponse = await fetch('/data');
+        const data = await locationsResponse.json();
+        updatePendingBadge(data.locations);
+      } catch (error) {
+        console.error('Erreur chargement locations pour badge:', error);
+      }
+    };
 
     // Charger les données au chargement de la page
     loadDashboardData();

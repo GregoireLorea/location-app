@@ -1,3 +1,5 @@
 .env
 data/
+documents/
 public/uploads/
+node_modules/

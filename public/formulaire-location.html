@@ -25,11 +25,35 @@
             padding: 40px;
             border-radius: 15px;
             box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            position: relative;
         }
 
         .header {
             text-align: center;
             margin-bottom: 30px;
+        }
+
+        .admin-login-btn {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 20px;
+            text-decoration: none;
+            font-size: 0.9em;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 10px rgba(102, 126, 234, 0.3);
+            z-index: 200;
+        }
+
+        .admin-login-btn:hover {
+            background: #5a6fd8;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
         }
 
         .header h1 {
@@ -316,6 +340,7 @@
 </head>
 <body>
     <div class="container">
+        <a href="/login.html" class="admin-login-btn">🔐 Admin</a>
         <div class="header">
             <h1>🎪 Demande de Location</h1>
             <p>Remplissez le formulaire ci-dessous pour faire votre demande</p>

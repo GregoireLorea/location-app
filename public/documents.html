@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Documents - Gestion des Locations</title>
+  <link href="style.css" rel="stylesheet">
+  <script src="auth.js"></script>
+</head>
+<body>
+  <nav class="navbar">
+    <div class="navbar-brand">
+      <h1><a href="index.html" style="color: inherit; text-decoration: none;">Location Manager</a></h1>
+    </div>
+    <ul class="navbar-nav">
+      <li><a href="index.html" class="nav-link">Dashboard</a></li>
+      <li><a href="stock.html" class="nav-link">Gestion Stock</a></li>
+      <li><a href="locations.html" class="nav-link">Gestion Locations <span id="pendingBadge" class="notification-badge" style="display: none;"></span></a></li>
+      <li><a href="calendar.html" class="nav-link">Calendrier</a></li>
+      <li><a href="documents.html" class="nav-link active">📄 Documents</a></li>
+      <li><a href="formulaire-location.html" class="nav-link">📝 Demande Public</a></li>
+      <li><a href="#" class="nav-link" onclick="logout()" style="color: #e74c3c;">🚪 Déconnexion</a></li>
+    </ul>
+  </nav>
+
+  <div class="container">
+    <div class="page-header">
+      <h2>Gestion des Documents</h2>
+      <p>Consultez et téléchargez les contrats et factures générés automatiquement</p>
+    </div>
+
+    <div class="documents-stats">
+      <div class="stat-card">
+        <div class="stat-icon">📋</div>
+        <div class="stat-info">
+          <h3 id="contractsCount">0</h3>
+          <p>Contrats de location</p>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">🧾</div>
+        <div class="stat-info">
+          <h3 id="invoicesCount">0</h3>
+          <p>Factures</p>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">📄</div>
+        <div class="stat-info">
+          <h3 id="totalDocuments">0</h3>
+          <p>Total documents</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <h3>Tous les documents</h3>
+        <div class="filters">
+          <select id="documentTypeFilter" onchange="filterDocuments()">
+            <option value="">Tous les types</option>
+            <option value="contrat">Contrats</option>
+            <option value="facture">Factures</option>
+          </select>
+          <input type="text" id="searchInput" placeholder="Rechercher..." onkeyup="filterDocuments()">
+          <button onclick="downloadAllDocuments()" class="btn-primary">📦 Télécharger tout</button>
+          <button onclick="refreshDocuments()" class="btn-secondary">🔄 Actualiser</button>
+        </div>
+      </div>
+
+      <div class="documents-grid" id="documentsContainer">
+        <!-- Les documents seront chargés ici -->
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .documents-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 20px;
+      margin: 30px 0;
+    }
+
+    .stat-card {
+      background: #fff;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+
+    .stat-icon {
+      font-size: 2.5rem;
+      opacity: 0.8;
+    }
+
+    .stat-info h3 {
+      margin: 0;
+      font-size: 2rem;
+      color: #4CAF50;
+    }
+
+    .stat-info p {
+      margin: 5px 0 0 0;
+      color: #666;
+      font-size: 0.9rem;
+    }
+
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+      gap: 15px;
+    }
+
+    .filters {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .filters select,
+    .filters input {
+      padding: 8px 12px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      font-size: 14px;
+    }
+
+    .documents-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 20px;
+    }
+
+    .document-card {
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      overflow: hidden;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .document-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    }
+
+    .document-header {
+      padding: 15px;
+      background: linear-gradient(135deg, #4CAF50, #45a049);
+      color: white;
+    }
+
+    .document-header.invoice {
+      background: linear-gradient(135deg, #17a2b8, #138496);
+    }
+
+    .document-title {
+      font-size: 1.1rem;
+      font-weight: bold;
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .document-subtitle {
+      font-size: 0.9rem;
+      opacity: 0.9;
+      margin: 5px 0 0 0;
+    }
+
+    .document-body {
+      padding: 15px;
+    }
+
+    .document-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+      font-size: 0.9rem;
+      color: #666;
+    }
+
+    .document-size {
+      background: #f8f9fa;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 0.8rem;
+    }
+
+    .document-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 15px;
+    }
+
+    .btn-download {
+      flex: 1;
+      padding: 8px 15px;
+      background: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      text-decoration: none;
+      text-align: center;
+      font-size: 0.9rem;
+      transition: background 0.2s;
+    }
+
+    .btn-download:hover {
+      background: #45a049;
+    }
+
+    .btn-view {
+      padding: 8px 12px;
+      background: #17a2b8;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      text-decoration: none;
+      font-size: 0.9rem;
+      transition: background 0.2s;
+    }
+
+    .btn-view:hover {
+      background: #138496;
+    }
+
+    .btn-delete {
+      padding: 8px 12px;
+      background: #dc3545;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      transition: background 0.2s;
+    }
+
+    .btn-delete:hover {
+      background: #c82333;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: #666;
+    }
+
+    .empty-state img {
+      width: 120px;
+      opacity: 0.5;
+      margin-bottom: 20px;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #666;
+    }
+
+    @media (max-width: 768px) {
+      .documents-stats {
+        grid-template-columns: 1fr;
+      }
+
+      .section-header {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .filters {
+        justify-content: stretch;
+      }
+
+      .filters select,
+      .filters input,
+      .filters button {
+        flex: 1;
+      }
+
+      .documents-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+
+  <script>
+    // Variables globales
+    let allDocuments = [];
+    let filteredDocuments = [];
+
+    // Vérifier l'authentification au chargement
+    document.addEventListener('DOMContentLoaded', async () => {
+      const user = await checkAuthStatus();
+      if (!user) {
+        return; // checkAuthStatus redirige déjà vers login si non authentifié
+      }
+
+      await loadDocuments();
+      updatePendingBadge();
+    });
+
+    // Fonction pour mettre à jour le badge de notification
+    async function updatePendingBadge() {
+      try {
+        const response = await fetch('/data');
+        const data = await response.json();
+        const pendingCount = data.locations.filter(l => l.status === 'pending').length;
+        const badge = document.getElementById('pendingBadge');
+
+        if (pendingCount > 0) {
+          badge.textContent = pendingCount;
+          badge.style.display = 'inline-block';
+        } else {
+          badge.style.display = 'none';
+        }
+      } catch (error) {
+        console.error('Erreur chargement badge:', error);
+      }
+    }
+
+    // Charger tous les documents
+    async function loadDocuments() {
+      try {
+        showLoading();
+
+        const response = await fetch('/api/documents', {
+          credentials: 'include'
+        });
+
+        if (!response.ok) {
+          throw new Error('Erreur lors du chargement des documents');
+        }
+
+        allDocuments = await response.json();
+        filteredDocuments = [...allDocuments];
+
+        updateStats();
+        displayDocuments();
+
+      } catch (error) {
+        console.error('Erreur:', error);
+        showError('Impossible de charger les documents');
+      }
+    }
+
+    // Mettre à jour les statistiques
+    function updateStats() {
+      const contracts = allDocuments.filter(doc => doc.filename.includes('contrat'));
+      const invoices = allDocuments.filter(doc => doc.filename.includes('facture'));
+
+      document.getElementById('contractsCount').textContent = contracts.length;
+      document.getElementById('invoicesCount').textContent = invoices.length;
+      document.getElementById('totalDocuments').textContent = allDocuments.length;
+    }
+
+    // Afficher les documents
+    function displayDocuments() {
+      const container = document.getElementById('documentsContainer');
+
+      if (filteredDocuments.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <div style="font-size: 4rem;">📄</div>
+            <h3>Aucun document trouvé</h3>
+            <p>Les documents seront générés automatiquement lors des locations.</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = filteredDocuments.map(doc => createDocumentCard(doc)).join('');
+    }
+
+    // Créer une carte de document
+    function createDocumentCard(doc) {
+      const isInvoice = doc.filename.includes('facture');
+      const isContract = doc.filename.includes('contrat');
+
+      const icon = isInvoice ? '🧾' : '📋';
+      const type = isInvoice ? 'Facture' : 'Contrat de location';
+      const headerClass = isInvoice ? 'invoice' : '';
+
+      // Extraire le nom du client et l'ID de location du nom du fichier
+      // Format: contrat-{clientName}-{id}-{timestamp}.pdf ou facture-{clientName}-{id}-{timestamp}.pdf
+      const filenameParts = doc.filename.split('-');
+      let clientName = 'N/A';
+      let locationId = 'N/A';
+
+      if (filenameParts.length >= 4) {
+        // Reconstituer le nom du client (peut contenir plusieurs segments séparés par des tirets)
+        const clientNameParts = [];
+        for (let i = 1; i < filenameParts.length - 2; i++) {
+          clientNameParts.push(filenameParts[i]);
+        }
+        clientName = clientNameParts.join('-').replace(/-/g, ' ');
+        locationId = filenameParts[filenameParts.length - 2];
+      } else {
+        // Fallback pour les anciens formats de fichiers
+        locationId = doc.filename.match(/(\d+)/)?.[1] || 'N/A';
+      }
+
+      // Formater la taille du fichier
+      const fileSize = formatFileSize(doc.size);
+
+      // Formater la date
+      const createdDate = new Date(doc.created).toLocaleDateString('fr-FR');
+      const createdTime = new Date(doc.created).toLocaleTimeString('fr-FR');
+
+      return `
+        <div class="document-card">
+          <div class="document-header ${headerClass}">
+            <div class="document-title">
+              ${icon} ${type}
+            </div>
+            <div class="document-subtitle">📍 ${clientName} - Location #${locationId}</div>
+          </div>
+          <div class="document-body">
+            <div class="document-meta">
+              <span>📅 ${createdDate}</span>
+              <span class="document-size">${fileSize}</span>
+            </div>
+            <div class="document-meta">
+              <span>🕒 ${createdTime}</span>
+              <span>👤 ${clientName}</span>
+            </div>
+            <div class="document-actions">
+              <a href="/api/documents/download/${encodeURIComponent(doc.filename)}"
+                 class="btn-download"
+                 target="_blank">
+                📥 Télécharger
+              </a>
+              <a href="/api/documents/view/${encodeURIComponent(doc.filename)}"
+                 class="btn-view"
+                 target="_blank">
+                👁️ Voir
+              </a>
+              <button onclick="deleteDocument('${doc.filename}')"
+                      class="btn-delete"
+                      title="Supprimer ce document">
+                🗑️ Supprimer
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // Filtrer les documents
+    function filterDocuments() {
+      const typeFilter = document.getElementById('documentTypeFilter').value;
+      const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+
+      filteredDocuments = allDocuments.filter(doc => {
+        const matchesType = !typeFilter || doc.filename.includes(typeFilter);
+
+        // Extraire le nom du client pour la recherche
+        const filenameParts = doc.filename.split('-');
+        let clientName = '';
+        if (filenameParts.length >= 4) {
+          const clientNameParts = [];
+          for (let i = 1; i < filenameParts.length - 2; i++) {
+            clientNameParts.push(filenameParts[i]);
+          }
+          clientName = clientNameParts.join('-').replace(/-/g, ' ').toLowerCase();
+        }
+
+        const matchesSearch = !searchTerm ||
+          doc.filename.toLowerCase().includes(searchTerm) ||
+          doc.filename.match(/(\d+)/)?.[1]?.includes(searchTerm) ||
+          clientName.includes(searchTerm);
+
+        return matchesType && matchesSearch;
+      });
+
+      displayDocuments();
+    }
+
+    // Actualiser les documents
+    async function refreshDocuments() {
+      await loadDocuments();
+    }
+
+    // Formater la taille de fichier
+    function formatFileSize(bytes) {
+      if (bytes === 0) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    }
+
+    // Afficher le chargement
+    function showLoading() {
+      document.getElementById('documentsContainer').innerHTML = `
+        <div class="loading">
+          <div style="font-size: 2rem;">⏳</div>
+          <p>Chargement des documents...</p>
+        </div>
+      `;
+    }
+
+    // Afficher une erreur
+    function showError(message) {
+      document.getElementById('documentsContainer').innerHTML = `
+        <div class="empty-state">
+          <div style="font-size: 4rem; color: #e74c3c;">❌</div>
+          <h3>Erreur</h3>
+          <p>${message}</p>
+          <button onclick="loadDocuments()" class="btn-secondary">Réessayer</button>
+        </div>
+      `;
+    }
+
+    // Supprimer un document
+    async function deleteDocument(filename) {
+      if (!confirm(`Êtes-vous sûr de vouloir supprimer le document "${filename}" ?\n\nCette action est irréversible.`)) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/documents/delete/${encodeURIComponent(filename)}`, {
+          method: 'DELETE',
+          credentials: 'include'
+        });
+
+        if (response.ok) {
+          await loadDocuments(); // Recharger la liste
+          alert('Document supprimé avec succès !');
+        } else {
+          const error = await response.json();
+          alert('Erreur lors de la suppression: ' + (error.error || 'Erreur inconnue'));
+        }
+      } catch (error) {
+        console.error('Erreur:', error);
+        alert('Erreur lors de la suppression du document');
+      }
+    }
+
+    // Télécharger tous les documents
+    async function downloadAllDocuments() {
+      if (allDocuments.length === 0) {
+        alert('Aucun document à télécharger');
+        return;
+      }
+
+      if (!confirm(`Télécharger tous les ${allDocuments.length} documents ?\n\nCela va ouvrir plusieurs onglets.`)) {
+        return;
+      }
+
+      try {
+        // Télécharger chaque document avec un délai pour éviter de surcharger le navigateur
+        for (let i = 0; i < allDocuments.length; i++) {
+          const doc = allDocuments[i];
+          setTimeout(() => {
+            const link = document.createElement('a');
+            link.href = `/api/documents/download/${encodeURIComponent(doc.filename)}`;
+            link.target = '_blank';
+            link.click();
+          }, i * 200); // Délai de 200ms entre chaque téléchargement
+        }
+
+        alert(`Téléchargement de ${allDocuments.length} documents démarré !`);
+      } catch (error) {
+        console.error('Erreur:', error);
+        alert('Erreur lors du téléchargement des documents');
+      }
+    }
+  </script>
+</body>
+</html>

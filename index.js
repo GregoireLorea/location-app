@@ -5,6 +5,7 @@ const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const multer = require('multer');
 const emailService = require('./services/emailService');
+const pdfService = require('./services/pdfService');
 require('dotenv').config();
 
 // Configuration des chemins de données (local vs Cloud Storage)
@@ -322,10 +323,10 @@ function isAvailable(itemId, from, to, qty) {
     return false;
   }
   
-  // Prendre en compte toutes les réservations actives (planned, ongoing, pending)
+  // Prendre en compte toutes les réservations actives (approved, ongoing, pending)
   const allBookings = loadData(LOCATIONS_FILE).filter(loc => 
     loc.itemId === itemId && 
-    ['planned', 'ongoing', 'pending'].includes(loc.status)
+    ['approved', 'ongoing', 'pending'].includes(loc.status)
   );
   
   console.log(`🔍 Article ${itemId} (${stock.name}): ${allBookings.length} réservations actives`);
@@ -359,7 +360,7 @@ app.get('/stock', requireAuth, (req, res) => {
     // Calculer les réservations actives pour cet article
     const activeBookings = locations.filter(loc => 
       loc.itemId === item.id && 
-      ['planned', 'ongoing', 'pending'].includes(loc.status)
+      ['approved', 'ongoing', 'pending'].includes(loc.status)
     );
     
     // Calculer la quantité totale réservée
@@ -401,7 +402,7 @@ app.get('/public/stock', (req, res) => {
     // Calculer les réservations actives pour cet article
     const activeBookings = locations.filter(loc => 
       loc.itemId === item.id && 
-      ['planned', 'ongoing', 'pending'].includes(loc.status)
+      ['approved', 'ongoing', 'pending'].includes(loc.status)
     );
     
     // Calculer la quantité totale réservée
@@ -458,7 +459,7 @@ app.post('/public/check-availability', (req, res) => {
 
       // Trouver les conflits pour ce matériel (toutes les réservations actives)
       const conflicts = locations.filter(location => {
-        if (location.itemId !== itemId || !['planned', 'ongoing', 'pending'].includes(location.status)) {
+        if (location.itemId !== itemId || !['approved', 'ongoing', 'pending'].includes(location.status)) {
           return false;
         }
 
@@ -662,7 +663,7 @@ app.post('/locations', requireAuth, async (req, res) => {
     preferredContact: preferredContact || '',
     messengerHandle: messengerHandle || '',
     requestComment: requestComment || '',
-    status: 'planned'
+    status: 'pending'
   };
   
   locations.push(newLocation);
@@ -701,11 +702,11 @@ app.post('/locations', requireAuth, async (req, res) => {
         }
         
         try {
-          console.log('📧 Envoi email client...');
-          await emailService.sendClientConfirmation(client, items);
-          console.log('✅ Email client envoyé avec succès');
+          console.log('📧 Envoi email client (pending)...');
+          await emailService.sendClientPendingNotification(client, items);
+          console.log('✅ Email client (pending) envoyé avec succès');
         } catch (clientEmailError) {
-          console.error('❌ Erreur email client:', clientEmailError);
+          console.error('❌ Erreur email client (pending):', clientEmailError);
         }
         
         console.log('📧 Processus d\'envoi emails terminé');
@@ -749,7 +750,7 @@ app.put('/locations/:id', requireAuth, (req, res) => {
   // Vérifier la disponibilité en excluant la réservation actuelle et en prenant en compte toutes les réservations actives
   const otherLocations = locations.filter(loc => 
     loc.id !== locationId && 
-    ['planned', 'ongoing', 'pending'].includes(loc.status)
+    ['approved', 'ongoing', 'pending'].includes(loc.status)
   );
   const stock = loadData(STOCK_FILE).find(i => i.id === itemId);
   const overlap = otherLocations.filter(loc => loc.itemId === itemId && (
@@ -779,58 +780,165 @@ app.put('/locations/:id', requireAuth, (req, res) => {
     preferredContact: preferredContact || locations[locationIndex].preferredContact || '',
     messengerHandle: messengerHandle || locations[locationIndex].messengerHandle || '',
     requestComment: requestComment || locations[locationIndex].requestComment || '',
-    status: req.body.status || locations[locationIndex].status || 'planned'
+    status: req.body.status || locations[locationIndex].status || 'pending'
   };
   saveData(LOCATIONS_FILE, locations);
   res.json({ ok: true });
 });
 
 // Marquer une réservation comme terminée
-app.put('/locations/:id/finish', requireAuth, (req, res) => {
-  const locations = loadData(LOCATIONS_FILE);
-  const locationId = parseInt(req.params.id);
-  
-  const locationIndex = locations.findIndex(loc => loc.id === locationId);
-  if (locationIndex === -1) {
-    return res.status(404).json({ error: "Réservation non trouvée" });
-  }
-  
-  locations[locationIndex].status = 'finished';
-  saveData(LOCATIONS_FILE, locations);
-  res.json({ ok: true });
-});
-
 // Supprimer une réservation
-app.delete('/locations/:id', requireAuth, (req, res) => {
+app.delete('/locations/:id', requireAuth, async (req, res) => {
   const locations = loadData(LOCATIONS_FILE);
   const locationId = parseInt(req.params.id);
-  
-  const filteredLocations = locations.filter(loc => loc.id !== locationId);
-  if (filteredLocations.length === locations.length) {
+
+  // Trouver la location à supprimer pour envoyer l'email
+  const locationToDelete = locations.find(loc => loc.id === locationId);
+  if (!locationToDelete) {
     return res.status(404).json({ error: "Réservation non trouvée" });
   }
-  
-  saveData(LOCATIONS_FILE, filteredLocations);
-  res.json({ ok: true });
+
+  try {
+    // Envoyer email de suppression au client seulement si la location n'est pas terminée
+    if (locationToDelete.status !== 'finished') {
+      const stock = loadData(STOCK_FILE);
+      const item = stock.find(s => s.id === locationToDelete.itemId);
+
+      if (item) {
+        console.log(`📧 Envoi email de suppression pour location ${locationId} (statut: ${locationToDelete.status})...`);
+        await emailService.sendClientDeletion(locationToDelete, [{ location: locationToDelete, item }]);
+        console.log(`✅ Email de suppression envoyé à ${locationToDelete.contactEmail}`);
+      }
+    } else {
+      console.log(`⏭️ Location ${locationId} déjà terminée - aucun email d'annulation envoyé`);
+    }
+
+    // Supprimer la location
+    const filteredLocations = locations.filter(loc => loc.id !== locationId);
+    saveData(LOCATIONS_FILE, filteredLocations);
+
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('❌ Erreur lors de la suppression de la location:', error);
+    res.status(500).json({ error: "Erreur lors de la suppression de la location" });
+  }
 });
 
-// Démarrer une réservation (passer de 'planned' à 'ongoing')
-app.put('/locations/:id/start', requireAuth, (req, res) => {
+// Accepter le contrat (enregistrer les données de contrat)
+app.put('/locations/:id/accept-contract', requireAuth, (req, res) => {
   const locations = loadData(LOCATIONS_FILE);
   const locationId = parseInt(req.params.id);
-  
+
   const locationIndex = locations.findIndex(loc => loc.id === locationId);
   if (locationIndex === -1) {
     return res.status(404).json({ error: "Réservation non trouvée" });
   }
-  
-  if (locations[locationIndex].status !== 'planned') {
-    return res.status(400).json({ error: "Cette réservation ne peut pas être démarrée" });
+
+  if (locations[locationIndex].status !== 'approved') {
+    return res.status(400).json({ error: "Cette réservation doit être approuvée avant l'acceptation du contrat" });
   }
-  
-  locations[locationIndex].status = 'ongoing';
+
+  // Enregistrer les données de contrat
+  if (req.body.contractAccepted) {
+    locations[locationIndex].contractAccepted = req.body.contractAccepted;
+    locations[locationIndex].contractAcceptedAt = req.body.contractAcceptedAt;
+    locations[locationIndex].contractAcceptedBy = req.body.contractAcceptedBy;
+  }
+
   saveData(LOCATIONS_FILE, locations);
   res.json({ ok: true });
+});
+
+// Démarrer une réservation (passer de 'approved' à 'ongoing' après paiement)
+app.put('/locations/:id/start', requireAuth, async (req, res) => {
+  const locations = loadData(LOCATIONS_FILE);
+  const locationId = parseInt(req.params.id);
+
+  const locationIndex = locations.findIndex(loc => loc.id === locationId);
+  if (locationIndex === -1) {
+    return res.status(404).json({ error: "Réservation non trouvée" });
+  }
+
+  if (locations[locationIndex].status !== 'approved') {
+    return res.status(400).json({ error: "Cette réservation doit être approuvée avant d'être démarrée" });
+  }
+
+  try {
+    // Mettre à jour le statut
+    locations[locationIndex].status = 'ongoing';
+    locations[locationIndex].startedAt = new Date().toISOString();
+    saveData(LOCATIONS_FILE, locations);
+
+    // Générer la facture
+    const location = locations[locationIndex];
+    const stock = loadData(STOCK_FILE);
+    const item = stock.find(s => s.id === location.itemId);
+
+    if (item) {
+      console.log(`📄 Génération du contrat pour location ${locationId}...`);
+
+      // Générer le contrat PDF
+      const contractFilename = await pdfService.generateContract(location, [{ location, item }]);
+      console.log(`✅ Contrat généré: ${contractFilename}`);
+
+      // Envoyer le contrat par email au client
+      await emailService.sendContractEmail(location, [{ location, item }], contractFilename);
+      console.log(`📧 Contrat envoyé par email à ${location.contactEmail}`);
+    }
+
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('❌ Erreur lors du démarrage de la location:', error);
+    res.status(500).json({ error: "Erreur lors du démarrage de la location" });
+  }
+});
+
+// Terminer une réservation (passer de 'ongoing' à 'finished' et envoyer facture)
+app.put('/locations/:id/finish', requireAuth, async (req, res) => {
+  const locations = loadData(LOCATIONS_FILE);
+  const locationId = parseInt(req.params.id);
+
+  const locationIndex = locations.findIndex(loc => loc.id === locationId);
+  if (locationIndex === -1) {
+    return res.status(404).json({ error: "Réservation non trouvée" });
+  }
+
+  if (locations[locationIndex].status !== 'ongoing') {
+    return res.status(400).json({ error: "Cette réservation doit être en cours pour être terminée" });
+  }
+
+  try {
+    // Mettre à jour le statut
+    locations[locationIndex].status = 'finished';
+    locations[locationIndex].finishedAt = new Date().toISOString();
+    saveData(LOCATIONS_FILE, locations);
+
+    // Générer et envoyer la facture
+    const location = locations[locationIndex];
+    const stock = loadData(STOCK_FILE);
+    const item = stock.find(s => s.id === location.itemId);
+
+    if (item) {
+      console.log(`📄 Génération de la facture pour location terminée ${locationId}...`);
+
+      // Générer la facture PDF
+      const invoiceFilename = await pdfService.generateInvoice(location, [{ location, item }]);
+      console.log(`✅ Facture générée: ${invoiceFilename}`);
+
+      // Envoyer la facture par email au client
+      await emailService.sendInvoiceEmail(location, [{ location, item }], invoiceFilename);
+      console.log(`📧 Facture envoyée par email à ${location.contactEmail}`);
+
+      // Envoyer rappel au trésorier pour remboursement de caution
+      await emailService.sendTreasurerDepositRefund(location, [{ location, item }]);
+      console.log(`📧 Rappel de remboursement de caution envoyé au trésorier`);
+    }
+
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('❌ Erreur lors de la finalisation de la location:', error);
+    res.status(500).json({ error: "Erreur lors de la finalisation de la location" });
+  }
 });
 
 // Stockage temporaire pour grouper les demandes
@@ -861,7 +969,7 @@ app.post('/webhook/email', express.json(), async (req, res) => {
       requestComment: emailData.commentaire || emailData.message || '',
       itemId: parseInt(emailData.materiel_id || 1),
       qty: parseInt(emailData.quantite || emailData.qty || 1),
-      status: 'planned',
+      status: 'pending',
       source: 'email-zapier'
     };
 
@@ -921,11 +1029,11 @@ app.post('/webhook/email', express.json(), async (req, res) => {
         }
         
         try {
-          console.log('📧 Webhook - Envoi email client...');
-          await emailService.sendClientConfirmation(notificationData.client, notificationData.items);
-          console.log('✅ Webhook - Email client envoyé avec succès');
+          console.log('📧 Webhook - Envoi email client (pending)...');
+          await emailService.sendClientPendingNotification(notificationData.client, notificationData.items);
+          console.log('✅ Webhook - Email client (pending) envoyé avec succès');
         } catch (clientEmailError) {
-          console.error('❌ Webhook - Erreur email client:', clientEmailError);
+          console.error('❌ Webhook - Erreur email client (pending):', clientEmailError);
         }
         
         console.log(`📧 Webhook - Processus emails terminé pour ${notificationData.items.length} article(s)`);
@@ -985,8 +1093,18 @@ app.post('/public/locations', async (req, res) => {
       return res.status(404).json({ error: 'Article non trouvé' });
     }
 
+    // Calculer les jours de location
+    const calculateDays = (fromDate, toDate) => {
+      const from = new Date(fromDate);
+      const to = new Date(toDate);
+      const diffTime = Math.abs(to - from);
+      const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 pour inclure le jour de début
+      return Math.max(1, diffDays); // Minimum 1 jour
+    };
+    const days = calculateDays(from, to);
+
     // Calculer les totaux
-    const totalPrice = item.price * qty;
+    const totalPrice = item.price * qty * days;
     const totalCaution = item.caution * qty;
 
     // Créer la location
@@ -1004,7 +1122,7 @@ app.post('/public/locations', async (req, res) => {
       comments,
       totalPrice,
       totalCaution,
-      status: 'planned',
+      status: 'pending',
       createdAt: new Date().toISOString()
     };
 
@@ -1031,7 +1149,7 @@ app.post('/public/locations', async (req, res) => {
     try {
       await Promise.all([
         emailService.sendAdminNotification(client, items),
-        emailService.sendClientConfirmation(client, items)
+        emailService.sendClientPendingNotification(client, items)
       ]);
       console.log('📧 Emails (admin + client) envoyés avec succès');
     } catch (emailError) {
@@ -1047,6 +1165,125 @@ app.post('/public/locations', async (req, res) => {
 
   } catch (error) {
     console.error('Erreur création location:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Approuver une demande de location
+app.put('/locations/:id/approve', requireAuth, async (req, res) => {
+  try {
+    const locations = loadData(LOCATIONS_FILE);
+    const locationId = parseInt(req.params.id);
+
+    const locationIndex = locations.findIndex(loc => loc.id === locationId);
+    if (locationIndex === -1) {
+      return res.status(404).json({ error: "Réservation non trouvée" });
+    }
+
+    const location = locations[locationIndex];
+    if (location.status !== 'pending') {
+      return res.status(400).json({ error: "Cette réservation ne peut pas être approuvée" });
+    }
+
+    // Mettre à jour le statut
+    locations[locationIndex].status = 'approved';
+    locations[locationIndex].approvedAt = new Date().toISOString();
+    saveData(LOCATIONS_FILE, locations);
+
+    // Envoyer l'email de confirmation au client
+    if (location.contactEmail || location.customerEmail) {
+      try {
+        const stock = loadData(STOCK_FILE);
+        const item = stock.find(s => s.id === location.itemId);
+        if (item) {
+          const client = {
+            clientName: location.clientName || location.customerName || `${location.clientFirstName} ${location.clientLastName}`.trim(),
+            contactEmail: location.contactEmail || location.customerEmail,
+            contactPhone: location.contactPhone || location.customerPhone || '',
+            associationName: location.associationName || '',
+            from: location.from,
+            fromTime: location.fromTime,
+            to: location.to,
+            toTime: location.toTime,
+            requestComment: location.requestComment || ''
+          };
+          const items = [{
+            location: location,
+            item: item
+          }];
+          await emailService.sendClientConfirmation(client, items);
+          console.log('✅ Email d\'approbation envoyé au client');
+        }
+      } catch (emailError) {
+        console.error('❌ Erreur envoi email d\'approbation:', emailError);
+        // Ne pas faire échouer l'approbation si l'email échoue
+      }
+    }
+
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('Erreur lors de l\'approbation:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Refuser une demande de location
+app.put('/locations/:id/reject', requireAuth, async (req, res) => {
+  try {
+    const locations = loadData(LOCATIONS_FILE);
+    const locationId = parseInt(req.params.id);
+    const { reason } = req.body || {};
+
+    const locationIndex = locations.findIndex(loc => loc.id === locationId);
+    if (locationIndex === -1) {
+      return res.status(404).json({ error: "Réservation non trouvée" });
+    }
+
+    const location = locations[locationIndex];
+    if (location.status !== 'pending') {
+      return res.status(400).json({ error: "Cette réservation ne peut pas être refusée" });
+    }
+
+    // Mettre à jour le statut
+    locations[locationIndex].status = 'rejected';
+    locations[locationIndex].rejectedAt = new Date().toISOString();
+    locations[locationIndex].rejectionReason = reason || '';
+    saveData(LOCATIONS_FILE, locations);
+
+    // Envoyer l'email de refus au client
+    if (location.contactEmail || location.customerEmail) {
+      try {
+        const stock = loadData(STOCK_FILE);
+        const item = stock.find(s => s.id === location.itemId);
+        if (item) {
+          const client = {
+            clientName: location.clientName || location.customerName || `${location.clientFirstName} ${location.clientLastName}`.trim(),
+            contactEmail: location.contactEmail || location.customerEmail,
+            contactPhone: location.contactPhone || location.customerPhone || '',
+            associationName: location.associationName || '',
+            from: location.from,
+            fromTime: location.fromTime,
+            to: location.to,
+            toTime: location.toTime,
+            requestComment: location.requestComment || '',
+            rejectionReason: reason || ''
+          };
+          const items = [{
+            location: location,
+            item: item
+          }];
+          await emailService.sendClientRejection(client, items);
+          console.log('✅ Email de refus envoyé au client');
+        }
+      } catch (emailError) {
+        console.error('❌ Erreur envoi email de refus:', emailError);
+        // Ne pas faire échouer le refus si l'email échoue
+      }
+    }
+
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('Erreur lors du refus:', error);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
@@ -1075,6 +1312,88 @@ app.get('/calendar/data', requireAuth, (req, res) => {
   } catch (error) {
     console.error('Erreur chargement données calendrier:', error);
     res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Route pour récupérer toutes les données (stock + locations) pour le badge
+app.get('/data', requireAuth, (req, res) => {
+  try {
+    const stock = loadData(STOCK_FILE);
+    const locations = loadData(LOCATIONS_FILE);
+
+    res.json({
+      stock: stock,
+      locations: locations
+    });
+  } catch (error) {
+    console.error('Erreur chargement données:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Route pour lister les documents
+app.get('/api/documents', requireAuth, (req, res) => {
+  try {
+    const documents = pdfService.listDocuments();
+    res.json(documents);
+  } catch (error) {
+    console.error('Erreur chargement documents:', error);
+    res.status(500).json({ error: 'Erreur lors du chargement des documents' });
+  }
+});
+
+// Route pour télécharger un document
+app.get('/api/documents/download/:filename', requireAuth, (req, res) => {
+  try {
+    const filename = req.params.filename;
+    const filePath = path.join(pdfService.getDocumentsPath(), filename);
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'Document non trouvé' });
+    }
+
+    res.download(filePath, filename);
+  } catch (error) {
+    console.error('Erreur téléchargement document:', error);
+    res.status(500).json({ error: 'Erreur lors du téléchargement' });
+  }
+});
+
+// Route pour visualiser un document
+app.get('/api/documents/view/:filename', requireAuth, (req, res) => {
+  try {
+    const filename = req.params.filename;
+    const filePath = path.join(pdfService.getDocumentsPath(), filename);
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'Document non trouvé' });
+    }
+
+    res.sendFile(filePath);
+  } catch (error) {
+    console.error('Erreur visualisation document:', error);
+    res.status(500).json({ error: 'Erreur lors de la visualisation' });
+  }
+});
+
+// Route pour supprimer un document
+app.delete('/api/documents/delete/:filename', requireAuth, (req, res) => {
+  try {
+    const filename = req.params.filename;
+    const filePath = path.join(pdfService.getDocumentsPath(), filename);
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'Document non trouvé' });
+    }
+
+    // Supprimer le fichier
+    fs.unlinkSync(filePath);
+    console.log(`📄 Document supprimé: ${filename}`);
+
+    res.json({ success: true, message: 'Document supprimé avec succès' });
+  } catch (error) {
+    console.error('Erreur suppression document:', error);
+    res.status(500).json({ error: 'Erreur lors de la suppression' });
   }
 });
 

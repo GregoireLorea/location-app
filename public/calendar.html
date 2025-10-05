@@ -15,8 +15,9 @@
     <ul class="navbar-nav">
       <li><a href="index.html" class="nav-link">Dashboard</a></li>
       <li><a href="stock.html" class="nav-link">Gestion Stock</a></li>
-      <li><a href="locations.html" class="nav-link">Gestion Locations</a></li>
+      <li><a href="locations.html" class="nav-link">Gestion Locations <span id="pendingBadge" class="notification-badge" style="display: none;"></span></a></li>
       <li><a href="calendar.html" class="nav-link active">Calendrier</a></li>
+      <li><a href="documents.html" class="nav-link">📄 Documents</a></li>
       <li><a href="formulaire-location.html" class="nav-link">📝 Demande Public</a></li>
       <li><a href="#" class="nav-link" onclick="logout()" style="color: #e74c3c;">🚪 Déconnexion</a></li>
     </ul>
@@ -240,7 +241,7 @@
       const location = event.extendedProps.location;
       const item = event.extendedProps.item;
       
-      const days = Math.ceil((new Date(location.to) - new Date(location.from)) / (1000 * 60 * 60 * 24)) + 1;
+      const days = Math.round((new Date(location.to) - new Date(location.from)) / (1000 * 60 * 60 * 24)) + 1;
       const price = item ? item.price || 0 : 0;
       const total = price * (location.qty || 1) * days + (location.deliveryCost || 0);
 
@@ -488,6 +489,28 @@
         }
       }, 100);
     });
+
+    // Fonction pour mettre à jour le badge de notification
+    async function updatePendingBadge() {
+      try {
+        const response = await fetch('/data');
+        const data = await response.json();
+        const pendingCount = data.locations.filter(l => l.status === 'pending').length;
+        const badge = document.getElementById('pendingBadge');
+
+        if (pendingCount > 0) {
+          badge.textContent = pendingCount;
+          badge.style.display = 'inline-block';
+        } else {
+          badge.style.display = 'none';
+        }
+      } catch (error) {
+        console.error('Erreur chargement badge:', error);
+      }
+    }
+
+    // Mettre à jour le badge au chargement
+    setTimeout(updatePendingBadge, 500);
   </script>
 </body>
 </html>
