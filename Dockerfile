@@ -7,10 +7,8 @@ WORKDIR /app
 # Copier les fichiers de dépendances
 COPY package*.json ./
 
-# Nettoyer le cache npm et installer les dépendances
-RUN npm cache clean --force && \
-    rm -f package-lock.json && \
-    npm install --production
+# Installer les dépendances
+RUN npm install --production
 
 # Créer un utilisateur non-root pour la sécurité
 RUN addgroup -g 1001 -S nodejs
