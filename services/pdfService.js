@@ -4,7 +4,7 @@ const path = require('path');
 
 // Configuration des chemins
 const isCloudRun = process.env.NODE_ENV === 'production';
-const documentsPath = isCloudRun && fs.existsSync('/app/documents') ? '/app/documents' : path.join(__dirname, '..', 'documents');
+const documentsPath = isCloudRun && fs.existsSync('/app/data') ? '/app/data/documents' : path.join(__dirname, '..', 'documents');
 
 // Créer le dossier documents s'il n'existe pas
 if (!fs.existsSync(documentsPath)) {
