@@ -59,6 +59,7 @@ jobs:
         EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
         ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
         ADMIN_USERS: ${{ secrets.ADMIN_USERS }}
+        TREASURER_EMAIL: ${{ secrets.TREASURER_EMAIL }}
       run: |
         # Créer un fichier YAML pour les variables d'environnement
         cat > /tmp/env-vars.yaml << EOF
@@ -68,6 +69,7 @@ jobs:
         EMAIL_PASS: "${EMAIL_PASS}"
         ADMIN_EMAIL: "${ADMIN_EMAIL}"
         ADMIN_USERS: "${ADMIN_USERS}"
+        TREASURER_EMAIL: "${TREASURER_EMAIL}"
         EOF
         
         echo "📋 Variables d'environnement configurées (format YAML):"
