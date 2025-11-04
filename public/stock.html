@@ -92,13 +92,14 @@
               <th>Stock total</th>
               <th>Disponible</th>
               <th>Réservé</th>
+              <th>En cours</th>
               <th>Emplacement</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody id="stockTableBody">
             <tr>
-              <td colspan="10">Chargement...</td>
+              <td colspan="12">Chargement...</td>
             </tr>
           </tbody>
         </table>
@@ -260,19 +261,21 @@
 
     function refreshStockTable() {
       const tbody = document.getElementById('stockTableBody');
-      
+
       if (stockData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10">Aucun article en stock</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="12">Aucun article en stock</td></tr>';
         return;
       }
 
       tbody.innerHTML = stockData.map(item => {
-        const reserved = getReservedQuantity(item.id);
-        const available = (item.qty || 0) - reserved;
-        const availabilityClass = available <= 0 ? 'unavailable' : 
-                                 available <= 2 ? 'low-stock' : 'available';
+        const quantities = getItemQuantities(item.id);
+        // Disponible = Stock total - En cours seulement (pas les réservations futures)
+        const available = (item.qty || 0) - quantities.ongoing;
 
-        const photoDisplay = item.photo ? 
+        // Couleur : vert si disponible > 0, rouge si disponible = 0
+        const availabilityClass = available > 0 ? 'available' : 'unavailable';
+
+        const photoDisplay = item.photo ?
           `<img src="${item.photo}" alt="${item.name}" class="item-photo">` :
           `<div class="no-photo">📷</div>`;
 
@@ -286,7 +289,8 @@
             <td>${item.caution || 0}€</td>
             <td>${item.qty || 0}</td>
             <td class="available-qty">${available}</td>
-            <td class="reserved-qty">${reserved}</td>
+            <td class="reserved-qty">${quantities.reserved}</td>
+            <td class="ongoing-qty">${quantities.ongoing}</td>
             <td>${item.location || 'Non spécifié'}</td>
             <td class="actions">
               <button onclick="editStock(${item.id})" class="btn-edit">Modifier</button>
@@ -298,11 +302,34 @@
       }).join('');
     }
 
-    function getReservedQuantity(itemId) {
-      // Ne prendre en compte que les locations démarrées (ongoing)
-      return locationsData
-        .filter(location => location.itemId === itemId && location.status === 'ongoing')
-        .reduce((sum, location) => sum + (location.qty || 1), 0);
+    function getItemQuantities(itemId) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      let reserved = 0;  // Réservé mais pas encore en cours
+      let ongoing = 0;   // En cours de location
+
+      locationsData.forEach(location => {
+        if (location.itemId !== itemId) return;
+        // Ne compter que les locations approuvées
+        if (location.status !== 'approved') return;
+
+        const fromDate = new Date(location.from);
+        const toDate = new Date(location.to);
+        fromDate.setHours(0, 0, 0, 0);
+        toDate.setHours(0, 0, 0, 0);
+
+        // Si la période de location est en cours (aujourd'hui est entre from et to)
+        if (today >= fromDate && today <= toDate) {
+          ongoing += (location.qty || 1);
+        }
+        // Sinon, si c'est une réservation future approuvée
+        else if (today < fromDate) {
+          reserved += (location.qty || 1);
+        }
+      });
+
+      return { reserved, ongoing };
     }
 
     function filterStock() {
@@ -311,20 +338,21 @@
       const availability = document.getElementById('availabilityFilter').value;
 
       let filtered = stockData.filter(item => {
-        const matchSearch = !search || 
+        const matchSearch = !search ||
           item.name.toLowerCase().includes(search) ||
           (item.description && item.description.toLowerCase().includes(search));
-        
+
         const matchCategory = !category || item.category === category;
-        
+
         let matchAvailability = true;
         if (availability) {
-          const reserved = getReservedQuantity(item.id);
-          const available = (item.qty || 0) - reserved;
-          
+          const quantities = getItemQuantities(item.id);
+          // Disponible = Stock total - En cours seulement
+          const available = (item.qty || 0) - quantities.ongoing;
+
           switch (availability) {
             case 'available':
-              matchAvailability = available > 2;
+              matchAvailability = available > 0;
               break;
             case 'partial':
               matchAvailability = available > 0 && available <= 2;

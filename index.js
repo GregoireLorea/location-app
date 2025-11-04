@@ -796,20 +796,11 @@ app.delete('/locations/:id', requireAuth, async (req, res) => {
   }
 
   try {
-    // Envoyer email de suppression au client
-    const stock = loadData(STOCK_FILE);
-    const item = stock.find(s => s.id === locationToDelete.itemId);
-
-    if (item && locationToDelete.contactEmail) {
-      console.log(`📧 Envoi email d'annulation pour location ${locationId}...`);
-      await emailService.sendClientDeletion(locationToDelete, [{ location: locationToDelete, item }]);
-      console.log(`✅ Email d'annulation envoyé à ${locationToDelete.contactEmail}`);
-    }
-
-    // Supprimer la location
+    // Supprimer la location (sans envoi d'email)
     const filteredLocations = locations.filter(loc => loc.id !== locationId);
     saveData(LOCATIONS_FILE, filteredLocations);
 
+    console.log(`✅ Location ${locationId} supprimée (sans envoi d'email)`);
     res.json({ ok: true });
   } catch (error) {
     console.error('❌ Erreur lors de la suppression de la location:', error);

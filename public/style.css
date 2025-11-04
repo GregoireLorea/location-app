@@ -380,6 +380,11 @@ textarea {
   font-weight: 600;
 }
 
+.ongoing-qty {
+  color: #ffc107;
+  font-weight: 600;
+}
+
 .actions {
   display: flex;
   gap: 0.5rem;
