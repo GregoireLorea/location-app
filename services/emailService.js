@@ -13,14 +13,8 @@ function calculateDays(fromDate, toDate) {
   const from = new Date(fromDate);
   const to = new Date(toDate);
   const diffTime = Math.abs(to - from);
-  const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 pour inclure le jour de début
-  return Math.max(1, diffDays); // Minimum 1 jour
-}
-
-function calculateTotalPrice(item, location) {
-  const days = calculateDays(location.from, location.to);
-  const pricePerDay = item.price || 0;
-  return pricePerDay * location.qty * days;
+  const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24)) + 1;
+  return Math.max(1, diffDays);
 }
 
 // Configuration email - sera initialisée par index.js
@@ -56,31 +50,25 @@ async function testEmailConfig() {
 // Fonction pour envoyer un email de notification à l'admin
 async function sendAdminNotification(client, items) {
   try {
-    console.log('🔄 Tentative d\'envoi d\'email groupé à l\'admin...');
-    console.log('🔧 Variables d\'environnement email:', {
-      EMAIL_USER: process.env.EMAIL_USER ? 'Défini ✅' : 'MANQUANT ❌',
-      ADMIN_EMAIL: process.env.ADMIN_EMAIL ? 'Défini ✅' : 'MANQUANT ❌',
-      transporterReady: !!emailTransporter ? 'OK ✅' : 'MANQUANT ❌'
-    });
+    console.log('🔄 Tentative d\'envoi d\'email à l\'admin...');
 
     if (!emailTransporter) {
-      console.error('❌ Transporteur email non initialisé pour notification admin');
+      console.error('❌ Transporteur email non initialisé');
       throw new Error('Service email non initialisé');
     }
 
     if (!process.env.ADMIN_EMAIL) {
-      console.error('❌ ADMIN_EMAIL non défini dans les variables d\'environnement');
+      console.error('❌ ADMIN_EMAIL non défini');
       throw new Error('ADMIN_EMAIL non configuré');
     }
 
-    // Calculer les totaux
     let totalPrice = 0;
     let totalCaution = 0;
-    
+
     const itemsHtml = items.map(({ location, item }) => {
-      const itemPrice = calculateTotalPrice(item, location);
-      const itemCaution = item.caution ? item.caution * location.qty : 0;
       const days = calculateDays(location.from, location.to);
+      const itemPrice = (item.price || 0) * location.qty * days;
+      const itemCaution = (item.caution || 0) * location.qty;
       totalPrice += itemPrice;
       totalCaution += itemCaution;
 
@@ -89,14 +77,13 @@ async function sendAdminNotification(client, items) {
           <td style="border: 1px solid #ddd; padding: 8px;">${item.name}</td>
           <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${location.qty}</td>
           <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${days} jour${days > 1 ? 's' : ''}</td>
-          <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${item.price}€/jour</td>
-          <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${itemPrice}€</td>
-          <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${itemCaution}€</td>
+          <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${item.price || 0}€/jour</td>
+          <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${itemPrice.toFixed(2)}€</td>
+          <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${itemCaution.toFixed(2)}€</td>
         </tr>
       `;
     }).join('');
 
-    // Générer le bouton vers la plateforme
     const platformButton = `
       <div style="text-align: center; margin: 20px 0;">
         <a href="${process.env.APP_BASE_URL || 'https://location.carpestudentem.be/login.html'}"
@@ -140,8 +127,8 @@ async function sendAdminNotification(client, items) {
               <tfoot>
                 <tr style="background-color: #f9f9f9; font-weight: bold;">
                   <td style="border: 1px solid #ddd; padding: 8px;" colspan="4">TOTAL</td>
-                  <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${totalPrice}€</td>
-                  <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${totalCaution}€</td>
+                  <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${totalPrice.toFixed(2)}€</td>
+                  <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${totalCaution.toFixed(2)}€</td>
                 </tr>
               </tfoot>
             </table>
@@ -177,22 +164,11 @@ async function sendAdminNotification(client, items) {
       `
     };
 
-    console.log('📬 Options email admin:', {
-      from: mailOptions.from,
-      to: mailOptions.to,
-      subject: mailOptions.subject
-    });
-
     const result = await emailTransporter.sendMail(mailOptions);
     console.log('✅ Email de notification admin envoyé avec succès:', result.messageId);
     return result;
   } catch (error) {
-    console.error('❌ Erreur détaillée envoi email admin:', {
-      message: error.message,
-      code: error.code,
-      command: error.command,
-      response: error.response
-    });
+    console.error('❌ Erreur envoi email admin:', error.message);
     throw error;
   }
 }
@@ -202,14 +178,13 @@ async function sendClientPendingNotification(client, items) {
   try {
     console.log('🔄 Tentative d\'envoi d\'email de demande reçue au client...');
 
-    // Calculer les totaux
     let totalPrice = 0;
     let totalCaution = 0;
 
     const itemsHtml = items.map(({ location, item }) => {
-      const itemPrice = calculateTotalPrice(item, location);
-      const itemCaution = item.caution ? item.caution * location.qty : 0;
       const days = calculateDays(location.from, location.to);
+      const itemPrice = (item.price || 0) * location.qty * days;
+      const itemCaution = (item.caution || 0) * location.qty;
       totalPrice += itemPrice;
       totalCaution += itemCaution;
 
@@ -217,8 +192,9 @@ async function sendClientPendingNotification(client, items) {
         <tr>
           <td style="border: 1px solid #ddd; padding: 8px;">${item.name}</td>
           <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${location.qty}</td>
-          <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${itemPrice}€</td>
-          <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${itemCaution}€</td>
+          <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${days} jour${days > 1 ? 's' : ''}</td>
+          <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${itemPrice.toFixed(2)}€</td>
+          <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${itemCaution.toFixed(2)}€</td>
         </tr>
       `;
     }).join('');
@@ -245,6 +221,7 @@ async function sendClientPendingNotification(client, items) {
                 <tr style="background-color: #f4f4f4;">
                   <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Article</th>
                   <th style="border: 1px solid #ddd; padding: 8px; text-align: center;">Quantité</th>
+                  <th style="border: 1px solid #ddd; padding: 8px; text-align: center;">Durée</th>
                   <th style="border: 1px solid #ddd; padding: 8px; text-align: right;">Prix</th>
                   <th style="border: 1px solid #ddd; padding: 8px; text-align: right;">Caution</th>
                 </tr>
@@ -254,9 +231,9 @@ async function sendClientPendingNotification(client, items) {
               </tbody>
               <tfoot>
                 <tr style="background-color: #fff3cd; font-weight: bold;">
-                  <td style="border: 1px solid #ddd; padding: 8px;" colspan="2">TOTAL</td>
-                  <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${totalPrice}€</td>
-                  <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${totalCaution}€</td>
+                  <td style="border: 1px solid #ddd; padding: 8px;" colspan="3">TOTAL</td>
+                  <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${totalPrice.toFixed(2)}€</td>
+                  <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${totalCaution.toFixed(2)}€</td>
                 </tr>
               </tfoot>
             </table>
@@ -301,22 +278,11 @@ async function sendClientPendingNotification(client, items) {
       `
     };
 
-    console.log('📬 Options email client (pending):', {
-      from: mailOptions.from,
-      to: mailOptions.to,
-      subject: mailOptions.subject
-    });
-
     const result = await emailTransporter.sendMail(mailOptions);
     console.log('✅ Email de demande reçue envoyé avec succès:', result.messageId);
     return result;
   } catch (error) {
-    console.error('❌ Erreur détaillée envoi email client (pending):', {
-      message: error.message,
-      code: error.code,
-      command: error.command,
-      response: error.response
-    });
+    console.error('❌ Erreur envoi email client (pending):', error.message);
     throw error;
   }
 }
@@ -326,14 +292,13 @@ async function sendClientConfirmation(client, items) {
   try {
     console.log('🔄 Tentative d\'envoi d\'email de confirmation au client...');
 
-    // Calculer les totaux
     let totalPrice = 0;
     let totalCaution = 0;
-    
+
     const itemsHtml = items.map(({ location, item }) => {
-      const itemPrice = calculateTotalPrice(item, location);
-      const itemCaution = item.caution ? item.caution * location.qty : 0;
       const days = calculateDays(location.from, location.to);
+      const itemPrice = (item.price || 0) * location.qty * days;
+      const itemCaution = (item.caution || 0) * location.qty;
       totalPrice += itemPrice;
       totalCaution += itemCaution;
 
@@ -342,9 +307,9 @@ async function sendClientConfirmation(client, items) {
           <td style="border: 1px solid #ddd; padding: 8px;">${item.name}</td>
           <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${location.qty}</td>
           <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${days} jour${days > 1 ? 's' : ''}</td>
-          <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${item.price}€/jour</td>
-          <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${itemPrice}€</td>
-          <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${itemCaution}€</td>
+          <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${item.price || 0}€/jour</td>
+          <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${itemPrice.toFixed(2)}€</td>
+          <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${itemCaution.toFixed(2)}€</td>
         </tr>
       `;
     }).join('');
@@ -363,7 +328,7 @@ async function sendClientConfirmation(client, items) {
             <h2>Excellente nouvelle ${client.clientName} !</h2>
             <p><strong>Votre demande de location a été approuvée.</strong> Voici les détails pour récupérer votre matériel :</p>
           </div>
-          
+
           <div style="padding: 20px;">
             <h3>📋 Matériel approuvé (${items.length} article${items.length > 1 ? 's' : ''})</h3>
             <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
@@ -383,32 +348,31 @@ async function sendClientConfirmation(client, items) {
               <tfoot>
                 <tr style="background-color: #e8f5e8; font-weight: bold;">
                   <td style="border: 1px solid #ddd; padding: 8px;" colspan="4">TOTAL</td>
-                  <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${totalPrice}€</td>
-                  <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${totalCaution}€</td>
+                  <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${totalPrice.toFixed(2)}€</td>
+                  <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${totalCaution.toFixed(2)}€</td>
                 </tr>
               </tfoot>
             </table>
-            
+
             <div style="background-color: #e8f5e8; padding: 15px; border-radius: 5px; margin: 20px 0;">
               <h4 style="margin-top: 0;">📅 Période de location</h4>
               <p style="margin: 5px 0;"><strong>Du :</strong> ${formatDateTime(client.from, client.fromTime)}</p>
               <p style="margin: 5px 0;"><strong>Au :</strong> ${formatDateTime(client.to, client.toTime)}</p>
             </div>
-            
+
             ${client.requestComment ? `
               <div style="background-color: #f0f8ff; padding: 15px; border-radius: 5px; margin: 20px 0;">
                 <h4 style="margin-top: 0;">📝 Votre commentaire</h4>
                 <p style="margin: 5px 0;">${client.requestComment}</p>
               </div>
             ` : ''}
-            
+
             <div style="background-color: #d4edda; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #28a745;">
               <h4 style="margin-top: 0;">📍 Récupération du matériel</h4>
               <ul style="margin: 5px 0; padding-left: 20px;">
                 <li><strong>Date/heure :</strong> ${formatDateTime(client.from, client.fromTime)}</li>
                 <li><strong>Lieu :</strong> CarpeStudentem - Rue de l'hocaille 12, 1348 Louvain-la-Neuve</li>
                 <li><strong>Retour :</strong> ${formatDateTime(client.to, client.toTime)}</li>
-                <li><strong>Paiement :</strong> À la récupération (QR code bancaire privilégié)</li>
               </ul>
               <div style="background-color: #fff3cd; padding: 10px; border-radius: 3px; margin-top: 10px; border: 1px solid #ffeaa7;">
                 <p style="margin: 0; font-weight: bold; color: #856404;">⏰ IMPORTANT : Veuillez vous présenter exactement à ${client.fromTime} pour récupérer votre matériel. La ponctualité est essentielle pour une gestion efficace des locations.</p>
@@ -418,14 +382,12 @@ async function sendClientConfirmation(client, items) {
             <div style="background-color: #fff3cd; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #ffc107;">
               <h4 style="margin-top: 0;">⚠️ Important</h4>
               <ul style="margin: 5px 0; padding-left: 20px;">
-                <li>Apportez une pièce d'identité pour la récupération</li>
-                <li>La caution sera demandée en plus du prix de location</li>
                 <li>Matériel à rendre en bon état et propre</li>
                 <li>Le matériel est à venir chercher à notre kot, qui se situe Rue de l'hocaille 12, 1348 Louvain-la-Neuve</li>
                 <li>Merci d'être ponctuel(le) pour la récupération et le retour, et d'être là à l'heure convenue</li>
               </ul>
             </div>
-            
+
             <div style="text-align: center; padding: 20px; border-top: 1px solid #eee; margin-top: 30px;">
               <p style="color: #666; font-size: 14px;">
                 Une question ? Contactez-nous :<br>
@@ -434,31 +396,20 @@ async function sendClientConfirmation(client, items) {
               </p>
             </div>
           </div>
-          
+
           <div style="background-color: #333; color: white; padding: 15px; text-align: center; font-size: 12px;">
             <p style="margin: 0;">Merci de faire confiance à notre service de location !</p>
-            <p style="margin: 5px 0 0 0;">📍 Location-app / CarpeStudentem- ${new Date().toLocaleDateString('fr-FR')}</p>
+            <p style="margin: 5px 0 0 0;">📍 Location-app / CarpeStudentem - ${new Date().toLocaleDateString('fr-FR')}</p>
           </div>
         </div>
       `
     };
 
-    console.log('📬 Options email client (approved):', {
-      from: mailOptions.from,
-      to: mailOptions.to,
-      subject: mailOptions.subject
-    });
-
     const result = await emailTransporter.sendMail(mailOptions);
     console.log('✅ Email d\'approbation client envoyé avec succès:', result.messageId);
     return result;
   } catch (error) {
-    console.error('❌ Erreur détaillée envoi email client (approved):', {
-      message: error.message,
-      code: error.code,
-      command: error.command,
-      response: error.response
-    });
+    console.error('❌ Erreur envoi email client (approved):', error.message);
     throw error;
   }
 }
@@ -466,16 +417,15 @@ async function sendClientConfirmation(client, items) {
 // Fonction pour envoyer un email de suppression de location au client
 async function sendClientDeletion(client, items, reason = '') {
   try {
-    console.log('🔄 Tentative d\'envoi d\'email de suppression au client...');
+    console.log('🔄 Tentative d\'envoi d\'email d\'annulation au client...');
 
-    // Calculer les totaux
     let totalPrice = 0;
     let totalCaution = 0;
 
     const itemsHtml = items.map(({ location, item }) => {
-      const itemPrice = calculateTotalPrice(item, location);
-      const itemCaution = item.caution ? item.caution * location.qty : 0;
       const days = calculateDays(location.from, location.to);
+      const itemPrice = (item.price || 0) * location.qty * days;
+      const itemCaution = (item.caution || 0) * location.qty;
       totalPrice += itemPrice;
       totalCaution += itemCaution;
 
@@ -483,8 +433,9 @@ async function sendClientDeletion(client, items, reason = '') {
         <tr>
           <td style="border: 1px solid #ddd; padding: 8px;">${item.name}</td>
           <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${location.qty}</td>
-          <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${itemPrice}€</td>
-          <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${itemCaution}€</td>
+          <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${days} jour${days > 1 ? 's' : ''}</td>
+          <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${itemPrice.toFixed(2)}€</td>
+          <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${itemCaution.toFixed(2)}€</td>
         </tr>
       `;
     }).join('');
@@ -511,6 +462,7 @@ async function sendClientDeletion(client, items, reason = '') {
                 <tr style="background-color: #f4f4f4;">
                   <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Article</th>
                   <th style="border: 1px solid #ddd; padding: 8px; text-align: center;">Quantité</th>
+                  <th style="border: 1px solid #ddd; padding: 8px; text-align: center;">Durée</th>
                   <th style="border: 1px solid #ddd; padding: 8px; text-align: right;">Prix</th>
                   <th style="border: 1px solid #ddd; padding: 8px; text-align: right;">Caution</th>
                 </tr>
@@ -520,9 +472,9 @@ async function sendClientDeletion(client, items, reason = '') {
               </tbody>
               <tfoot>
                 <tr style="background-color: #f8d7da; font-weight: bold;">
-                  <td style="border: 1px solid #ddd; padding: 8px;" colspan="2">TOTAL</td>
-                  <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${totalPrice}€</td>
-                  <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${totalCaution}€</td>
+                  <td style="border: 1px solid #ddd; padding: 8px;" colspan="3">TOTAL</td>
+                  <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${totalPrice.toFixed(2)}€</td>
+                  <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${totalCaution.toFixed(2)}€</td>
                 </tr>
               </tfoot>
             </table>
@@ -543,7 +495,6 @@ async function sendClientDeletion(client, items, reason = '') {
             <div style="background-color: #d1ecf1; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #17a2b8;">
               <h4 style="margin-top: 0;">💡 Que faire maintenant ?</h4>
               <ul style="margin: 5px 0; padding-left: 20px;">
-                <li>Si vous aviez payé, nous vous rembourserons dans les plus brefs délais</li>
                 <li>Vous pouvez refaire une nouvelle demande de location à tout moment</li>
                 <li>Consultez notre catalogue pour d'autres options</li>
                 <li>Contactez-nous si vous avez des questions</li>
@@ -567,22 +518,11 @@ async function sendClientDeletion(client, items, reason = '') {
       `
     };
 
-    console.log('📬 Options email client (deleted):', {
-      from: mailOptions.from,
-      to: mailOptions.to,
-      subject: mailOptions.subject
-    });
-
     const result = await emailTransporter.sendMail(mailOptions);
-    console.log('✅ Email de suppression client envoyé avec succès:', result.messageId);
+    console.log('✅ Email d\'annulation envoyé avec succès:', result.messageId);
     return result;
   } catch (error) {
-    console.error('❌ Erreur détaillée envoi email client (deleted):', {
-      message: error.message,
-      code: error.code,
-      command: error.command,
-      response: error.response
-    });
+    console.error('❌ Erreur envoi email client (deleted):', error.message);
     throw error;
   }
 }
@@ -592,14 +532,13 @@ async function sendClientRejection(client, items, reason = '') {
   try {
     console.log('🔄 Tentative d\'envoi d\'email de refus au client...');
 
-    // Calculer les totaux
     let totalPrice = 0;
     let totalCaution = 0;
 
     const itemsHtml = items.map(({ location, item }) => {
-      const itemPrice = calculateTotalPrice(item, location);
-      const itemCaution = item.caution ? item.caution * location.qty : 0;
       const days = calculateDays(location.from, location.to);
+      const itemPrice = (item.price || 0) * location.qty * days;
+      const itemCaution = (item.caution || 0) * location.qty;
       totalPrice += itemPrice;
       totalCaution += itemCaution;
 
@@ -607,8 +546,9 @@ async function sendClientRejection(client, items, reason = '') {
         <tr>
           <td style="border: 1px solid #ddd; padding: 8px;">${item.name}</td>
           <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${location.qty}</td>
-          <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${itemPrice}€</td>
-          <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${itemCaution}€</td>
+          <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${days} jour${days > 1 ? 's' : ''}</td>
+          <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${itemPrice.toFixed(2)}€</td>
+          <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${itemCaution.toFixed(2)}€</td>
         </tr>
       `;
     }).join('');
@@ -635,6 +575,7 @@ async function sendClientRejection(client, items, reason = '') {
                 <tr style="background-color: #f4f4f4;">
                   <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Article</th>
                   <th style="border: 1px solid #ddd; padding: 8px; text-align: center;">Quantité</th>
+                  <th style="border: 1px solid #ddd; padding: 8px; text-align: center;">Durée</th>
                   <th style="border: 1px solid #ddd; padding: 8px; text-align: right;">Prix</th>
                   <th style="border: 1px solid #ddd; padding: 8px; text-align: right;">Caution</th>
                 </tr>
@@ -644,9 +585,9 @@ async function sendClientRejection(client, items, reason = '') {
               </tbody>
               <tfoot>
                 <tr style="background-color: #f8d7da; font-weight: bold;">
-                  <td style="border: 1px solid #ddd; padding: 8px;" colspan="2">TOTAL</td>
-                  <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${totalPrice}€</td>
-                  <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${totalCaution}€</td>
+                  <td style="border: 1px solid #ddd; padding: 8px;" colspan="3">TOTAL</td>
+                  <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${totalPrice.toFixed(2)}€</td>
+                  <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${totalCaution.toFixed(2)}€</td>
                 </tr>
               </tfoot>
             </table>
@@ -691,377 +632,11 @@ async function sendClientRejection(client, items, reason = '') {
       `
     };
 
-    console.log('📬 Options email client (rejected):', {
-      from: mailOptions.from,
-      to: mailOptions.to,
-      subject: mailOptions.subject
-    });
-
     const result = await emailTransporter.sendMail(mailOptions);
     console.log('✅ Email de refus client envoyé avec succès:', result.messageId);
     return result;
   } catch (error) {
-    console.error('❌ Erreur détaillée envoi email client (rejected):', {
-      message: error.message,
-      code: error.code,
-      command: error.command,
-      response: error.response
-    });
-    throw error;
-  }
-}
-
-async function sendTreasurerDepositRefund(client, items, totalDeposit) {
-  try {
-    console.log('🔄 Envoi email trésorier pour remboursement caution...');
-
-    // Calculer les totaux
-    let totalPrice = 0;
-    let totalCaution = 0;
-
-    const itemsHtml = items.map(({ location, item }) => {
-      const itemPrice = calculateTotalPrice(item, location);
-      const itemCaution = item.caution ? item.caution * location.qty : 0;
-      const days = calculateDays(location.from, location.to);
-      totalPrice += itemPrice;
-      totalCaution += itemCaution;
-
-      return `
-        <tr>
-          <td style="border: 1px solid #ddd; padding: 8px;">${item.name}</td>
-          <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${location.qty}</td>
-          <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${days} jour${days > 1 ? 's' : ''}</td>
-          <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${item.price}€/jour</td>
-          <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${itemCaution}€</td>
-        </tr>
-      `;
-    }).join('');
-
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: process.env.TREASURER_EMAIL,
-      subject: `💰 Remboursement caution - ${client.clientName} - ${totalCaution}€`,
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <div style="background-color: #17a2b8; color: white; padding: 20px; text-align: center;">
-            <h1 style="margin: 0;">💰 Remboursement de caution</h1>
-          </div>
-
-          <div style="padding: 20px; background-color: #e1f5fe;">
-            <h2>Location terminée</h2>
-            <p><strong>Une location vient de se terminer. Voici les détails pour le remboursement de la caution :</strong></p>
-          </div>
-
-          <div style="padding: 20px;">
-            <h3>👤 Client</h3>
-            <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 10px 0;">
-              <p style="margin: 5px 0;"><strong>Nom :</strong> ${client.clientName}</p>
-              <p style="margin: 5px 0;"><strong>Email :</strong> ${client.contactEmail}</p>
-              ${client.contactPhone ? `<p style="margin: 5px 0;"><strong>Téléphone :</strong> ${client.contactPhone}</p>` : ''}
-              ${client.associationName ? `<p style="margin: 5px 0;"><strong>Association :</strong> ${client.associationName}</p>` : ''}
-            </div>
-
-            <h3>📋 Matériel loué</h3>
-            <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
-              <thead>
-                <tr style="background-color: #f4f4f4;">
-                  <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Article</th>
-                  <th style="border: 1px solid #ddd; padding: 8px; text-align: center;">Quantité</th>
-                  <th style="border: 1px solid #ddd; padding: 8px; text-align: right;">Caution</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${itemsHtml}
-              </tbody>
-              <tfoot>
-                <tr style="background-color: #e1f5fe; font-weight: bold;">
-                  <td style="border: 1px solid #ddd; padding: 8px;" colspan="2">TOTAL CAUTION À REMBOURSER</td>
-                  <td style="border: 1px solid #ddd; padding: 8px; text-align: right; font-size: 18px;">${totalCaution}€</td>
-                </tr>
-              </tfoot>
-            </table>
-
-            <div style="background-color: #e1f5fe; padding: 15px; border-radius: 5px; margin: 20px 0;">
-              <h4 style="margin-top: 0;">📅 Période de location</h4>
-              <p style="margin: 5px 0;"><strong>Du :</strong> ${formatDateTime(client.from, client.fromTime)}</p>
-              <p style="margin: 5px 0;"><strong>Au :</strong> ${formatDateTime(client.to, client.toTime)}</p>
-              <p style="margin: 5px 0;"><strong>Terminée le :</strong> ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}</p>
-            </div>
-
-            <div style="background-color: #d1ecf1; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #17a2b8;">
-              <h4 style="margin-top: 0;">💰 Action requise</h4>
-              <p style="margin: 5px 0; font-weight: bold; font-size: 16px;">Montant à rembourser : ${totalCaution}€</p>
-              <p style="margin: 5px 0;">Veuillez procéder au remboursement de la caution à ${client.clientName}</p>µ
-              <p style="margin: 5px 0;">Pour connaitre le BE, regardez l'historique des transactions</p>
-              
-            </div>
-
-            <div style="background-color: #fff3cd; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #ffc107;">
-              <h4 style="margin-top: 0;">📝 Contact client</h4>
-              <p style="margin: 5px 0;">Pour organiser le remboursement, contactez ${client.clientName} :</p>
-              <ul style="margin: 10px 0; padding-left: 20px;">
-                <li><strong>Email :</strong> ${client.contactEmail}</li>
-                ${client.contactPhone ? `<li><strong>Téléphone :</strong> ${client.contactPhone}</li>` : ''}
-                ${client.messengerHandle ? `<li><strong>Messenger :</strong> ${client.messengerHandle}</li>` : ''}
-              </ul>
-            </div>
-          </div>
-
-          <div style="background-color: #f8f9fa; padding: 20px; text-align: center; border-top: 1px solid #ddd;">
-            <p style="margin: 0; color: #6c757d; font-size: 14px;">
-              Email automatique envoyé par le système de gestion des locations CarpeStudentem<br>
-              Location ID: ${client.id}
-            </p>
-          </div>
-        </div>
-      `
-    };
-
-    await emailTransporter.sendMail(mailOptions);
-    console.log('✅ Email trésorier envoyé avec succès');
-    return true;
-
-  } catch (error) {
-    console.error('❌ Erreur lors de l\'envoi de l\'email trésorier:', {
-      message: error.message,
-      code: error.code,
-      command: error.command,
-      response: error.response
-    });
-    throw error;
-  }
-}
-
-async function sendContractEmail(client, items, contractPath) {
-  try {
-    console.log('🔄 Envoi email avec contrat de location...');
-
-    // Calculer les totaux
-    let totalPrice = 0;
-    let totalCaution = 0;
-
-    const itemsHtml = items.map(({ location, item }) => {
-      const itemPrice = calculateTotalPrice(item, location);
-      const itemCaution = item.caution ? item.caution * location.qty : 0;
-      const days = calculateDays(location.from, location.to);
-      totalPrice += itemPrice;
-      totalCaution += itemCaution;
-
-      return `
-        <tr>
-          <td style="border: 1px solid #ddd; padding: 8px;">${item.name}</td>
-          <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${location.qty}</td>
-          <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${itemPrice}€</td>
-          <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${itemCaution}€</td>
-        </tr>
-      `;
-    }).join('');
-
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: client.contactEmail,
-      subject: `📋 Contrat de location - ${client.clientName} - Location démarrée`,
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <div style="background-color: #4CAF50; color: white; padding: 20px; text-align: center;">
-            <h1 style="margin: 0;">📋 Contrat de Location</h1>
-          </div>
-
-          <div style="padding: 20px; background-color: #e8f5e8;">
-            <h2>Bonjour ${client.clientName} !</h2>
-            <p><strong>Votre location a été démarrée.</strong> Vous trouverez ci-joint votre contrat de location officiel.</p>
-            <p><strong>✅ Ce contrat a été accepté par les deux parties :</strong> vous-même et CarpeStudentem ASBL.</p>
-          </div>
-
-          <div style="padding: 20px;">
-            <h3>📋 Matériel en location</h3>
-            <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
-              <thead>
-                <tr style="background-color: #f4f4f4;">
-                  <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Article</th>
-                  <th style="border: 1px solid #ddd; padding: 8px; text-align: center;">Quantité</th>
-                  <th style="border: 1px solid #ddd; padding: 8px; text-align: right;">Prix</th>
-                  <th style="border: 1px solid #ddd; padding: 8px; text-align: right;">Caution</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${itemsHtml}
-              </tbody>
-              <tfoot>
-                <tr style="background-color: #e8f5e8; font-weight: bold;">
-                  <td style="border: 1px solid #ddd; padding: 8px;" colspan="2">TOTAL</td>
-                  <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${totalPrice}€</td>
-                  <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${totalCaution}€</td>
-                </tr>
-              </tfoot>
-            </table>
-
-            <div style="background-color: #e8f5e8; padding: 15px; border-radius: 5px; margin: 20px 0;">
-              <h4 style="margin-top: 0;">📅 Période de location</h4>
-              <p style="margin: 5px 0;"><strong>Du :</strong> ${formatDateTime(client.from, client.fromTime)}</p>
-              <p style="margin: 5px 0;"><strong>Au :</strong> ${formatDateTime(client.to, client.toTime)}</p>
-              <p style="margin: 5px 0;"><strong>Démarrée le :</strong> ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}</p>
-            </div>
-
-            <div style="background-color: #d4edda; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #28a745;">
-              <h4 style="margin-top: 0;">📄 Contrat de location validé</h4>
-              <p style="margin: 5px 0;">Vous trouverez en pièce jointe votre contrat de location officiel.</p>
-              <p style="margin: 5px 0;">Ce document contient tous les détails de votre location ainsi que les conditions générales.</p>
-              <p style="margin: 5px 0;"><strong>✅ Ce contrat a été accepté numériquement par vous-même lors de la récupération du matériel, en présence de notre équipe.</strong></p>
-            </div>
-
-            <div style="background-color: #fff3cd; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #ffc107;">
-              <h4 style="margin-top: 0;">⚠️ Important - Retour du matériel</h4>
-              <ul style="margin: 5px 0; padding-left: 20px;">
-                <li><strong>Date de retour :</strong> ${formatDateTime(client.to, client.toTime)}</li>
-                <li><strong>Lieu :</strong> CarpeStudentem - Rue de l'hocaille 12, 1348 Louvain-la-Neuve</li>
-                <li><strong>État :</strong> Le matériel doit être rendu dans le même état qu'à la récupération</li>
-                <li><strong>Caution :</strong> ${totalCaution}€ seront remboursés après vérification du matériel</li>
-              </ul>
-            </div>
-          </div>
-
-          <div style="background-color: #f8f9fa; padding: 20px; text-align: center; border-top: 1px solid #ddd;">
-            <p style="margin: 0; color: #6c757d; font-size: 14px;">
-              Email automatique envoyé par le système de gestion des locations CarpeStudentem<br>
-              Location ID: ${client.id} - Contrat généré automatiquement
-            </p>
-          </div>
-        </div>
-      `,
-      attachments: [
-        {
-          filename: `contrat-location-${client.id}.pdf`,
-          path: contractPath,
-          contentType: 'application/pdf'
-        }
-      ]
-    };
-
-    await emailTransporter.sendMail(mailOptions);
-    console.log('✅ Email avec contrat envoyé avec succès');
-    return true;
-
-  } catch (error) {
-    console.error('❌ Erreur lors de l\'envoi de l\'email avec contrat:', {
-      message: error.message,
-      code: error.code,
-      command: error.command,
-      response: error.response
-    });
-    throw error;
-  }
-}
-
-async function sendInvoiceEmail(client, items, invoicePath) {
-  try {
-    console.log('🔄 Envoi email avec facture...');
-
-    // Calculer les totaux
-    let totalPrice = 0;
-    let totalCaution = 0;
-
-    const itemsHtml = items.map(({ location, item }) => {
-      const itemPrice = calculateTotalPrice(item, location);
-      const itemCaution = item.caution ? item.caution * location.qty : 0;
-      const days = calculateDays(location.from, location.to);
-      totalPrice += itemPrice;
-      totalCaution += itemCaution;
-
-      return `
-        <tr>
-          <td style="border: 1px solid #ddd; padding: 8px;">${item.name}</td>
-          <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${location.qty}</td>
-          <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${itemPrice}€</td>
-        </tr>
-      `;
-    }).join('');
-
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: client.contactEmail,
-      subject: `🧾 Facture de location - ${client.clientName} - Location terminée`,
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <div style="background-color: #17a2b8; color: white; padding: 20px; text-align: center;">
-            <h1 style="margin: 0;">🧾 Facture de Location</h1>
-          </div>
-
-          <div style="padding: 20px; background-color: #e1f5fe;">
-            <h2>Merci ${client.clientName} !</h2>
-            <p><strong>Votre location est maintenant terminée.</strong> Vous trouverez ci-joint votre facture officielle.</p>
-          </div>
-
-          <div style="padding: 20px;">
-            <h3>📋 Récapitulatif de votre location</h3>
-            <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
-              <thead>
-                <tr style="background-color: #f4f4f4;">
-                  <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Article</th>
-                  <th style="border: 1px solid #ddd; padding: 8px; text-align: center;">Quantité</th>
-                  <th style="border: 1px solid #ddd; padding: 8px; text-align: right;">Montant</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${itemsHtml}
-              </tbody>
-              <tfoot>
-                <tr style="background-color: #e1f5fe; font-weight: bold;">
-                  <td style="border: 1px solid #ddd; padding: 8px;" colspan="2">TOTAL FACTURÉ</td>
-                  <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${totalPrice}€</td>
-                </tr>
-              </tfoot>
-            </table>
-
-            <div style="background-color: #e1f5fe; padding: 15px; border-radius: 5px; margin: 20px 0;">
-              <h4 style="margin-top: 0;">📅 Période de location</h4>
-              <p style="margin: 5px 0;"><strong>Du :</strong> ${formatDateTime(client.from, client.fromTime)}</p>
-              <p style="margin: 5px 0;"><strong>Au :</strong> ${formatDateTime(client.to, client.toTime)}</p>
-              <p style="margin: 5px 0;"><strong>Terminée le :</strong> ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}</p>
-            </div>
-
-            <div style="background-color: #d1ecf1; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #17a2b8;">
-              <h4 style="margin-top: 0;">🧾 Facture</h4>
-              <p style="margin: 5px 0;">Vous trouverez en pièce jointe votre facture officielle.</p>
-              <p style="margin: 5px 0;"><strong>Montant facturé :</strong> ${totalPrice}€</p>
-              <p style="margin: 5px 0;"><strong>Caution remboursée :</strong> ${totalCaution}€</p>
-            </div>
-
-            <div style="background-color: #d4edda; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #28a745;">
-              <h4 style="margin-top: 0;">✅ Location terminée avec succès</h4>
-              <p style="margin: 5px 0;">Merci d'avoir fait confiance à CarpeStudentem pour votre location.</p>
-              <p style="margin: 5px 0;">N'hésitez pas à nous recontacter pour vos prochains besoins de matériel !</p>
-            </div>
-          </div>
-
-          <div style="background-color: #f8f9fa; padding: 20px; text-align: center; border-top: 1px solid #ddd;">
-            <p style="margin: 0; color: #6c757d; font-size: 14px;">
-              Email automatique envoyé par le système de gestion des locations CarpeStudentem<br>
-              Facture n° FAC-${client.id} - Générée automatiquement
-            </p>
-          </div>
-        </div>
-      `,
-      attachments: [
-        {
-          filename: `facture-${client.id}.pdf`,
-          path: invoicePath,
-          contentType: 'application/pdf'
-        }
-      ]
-    };
-
-    await emailTransporter.sendMail(mailOptions);
-    console.log('✅ Email avec facture envoyé avec succès');
-    return true;
-
-  } catch (error) {
-    console.error('❌ Erreur lors de l\'envoi de l\'email avec facture:', {
-      message: error.message,
-      code: error.code,
-      command: error.command,
-      response: error.response
-    });
+    console.error('❌ Erreur envoi email client (rejected):', error.message);
     throw error;
   }
 }
@@ -1073,8 +648,5 @@ module.exports = {
   sendClientPendingNotification,
   sendClientConfirmation,
   sendClientRejection,
-  sendClientDeletion,
-  sendTreasurerDepositRefund,
-  sendContractEmail,
-  sendInvoiceEmail
+  sendClientDeletion
 };

@@ -17,7 +17,6 @@
       <li><a href="stock.html" class="nav-link">Gestion Stock</a></li>
       <li><a href="locations.html" class="nav-link">Gestion Locations <span id="pendingBadge" class="notification-badge" style="display: none;"></span></a></li>
       <li><a href="calendar.html" class="nav-link active">Calendrier</a></li>
-      <li><a href="documents.html" class="nav-link">📄 Documents</a></li>
       <li><a href="formulaire-location.html" class="nav-link">📝 Demande Public</a></li>
       <li><a href="#" class="nav-link" onclick="logout()" style="color: #e74c3c;">🚪 Déconnexion</a></li>
     </ul>
@@ -156,13 +155,16 @@
 
       const itemFilter = document.getElementById('itemFilter').value;
       const statusFilter = document.getElementById('statusFilter').value;
-      
-      let filteredLocations = locationsData;
-      
+
+      // Filtrer seulement les réservations demandées (pending) et acceptées (approved)
+      let filteredLocations = locationsData.filter(loc =>
+        loc.status === 'pending' || loc.status === 'approved'
+      );
+
       if (itemFilter) {
         filteredLocations = filteredLocations.filter(loc => loc.itemId.toString() === itemFilter);
       }
-      
+
       if (statusFilter) {
         filteredLocations = filteredLocations.filter(location => {
           switch (statusFilter) {
@@ -375,16 +377,21 @@
 
     function updateDetailedPlanning() {
       const container = document.getElementById('detailedPlanning');
-      
-      if (locationsData.length === 0) {
-        container.innerHTML = '<p>Aucune réservation</p>';
+
+      // Filtrer seulement les réservations demandées (pending) et acceptées (approved)
+      const filteredLocations = locationsData.filter(loc =>
+        loc.status === 'pending' || loc.status === 'approved'
+      );
+
+      if (filteredLocations.length === 0) {
+        container.innerHTML = '<p>Aucune réservation demandée ou acceptée</p>';
         return;
       }
 
       // Grouper par semaine
       const weeklyPlanning = {};
-      
-      locationsData.forEach(location => {
+
+      filteredLocations.forEach(location => {
         const startDate = new Date(location.from);
         const weekStart = getWeekStart(startDate);
         const weekKey = weekStart.toISOString().split('T')[0];

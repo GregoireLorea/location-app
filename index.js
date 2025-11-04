@@ -5,7 +5,6 @@ const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const multer = require('multer');
 const emailService = require('./services/emailService');
-const pdfService = require('./services/pdfService');
 require('dotenv').config();
 
 // Configuration des chemins de données (local vs Cloud Storage)
@@ -322,15 +321,15 @@ function isAvailable(itemId, from, to, qty) {
     console.log(`❌ Article ${itemId} non trouvé dans le stock`);
     return false;
   }
-  
-  // Prendre en compte toutes les réservations actives (approved, ongoing, pending)
-  const allBookings = loadData(LOCATIONS_FILE).filter(loc => 
-    loc.itemId === itemId && 
-    ['approved', 'ongoing', 'pending'].includes(loc.status)
+
+  // Prendre en compte toutes les réservations actives (approved, pending)
+  const allBookings = loadData(LOCATIONS_FILE).filter(loc =>
+    loc.itemId === itemId &&
+    ['approved', 'pending'].includes(loc.status)
   );
-  
+
   console.log(`🔍 Article ${itemId} (${stock.name}): ${allBookings.length} réservations actives`);
-  
+
   const overlap = allBookings.filter(loc => {
     const hasOverlap = (
       (new Date(from) <= new Date(loc.to)) &&
@@ -341,34 +340,34 @@ function isAvailable(itemId, from, to, qty) {
     }
     return hasOverlap;
   });
-  
+
   const qtyBooked = overlap.reduce((sum, l) => sum + (l.qty || 1), 0);
   const available = (stock.qty - qtyBooked);
   const isAvailableResult = available >= qty;
-  
+
   console.log(`📊 Stock total: ${stock.qty}, Réservé: ${qtyBooked}, Disponible: ${available}, Demandé: ${qty}, Résultat: ${isAvailableResult}`);
-  
+
   return isAvailableResult;
 }
 
 app.get('/stock', requireAuth, (req, res) => {
   const stock = loadData(STOCK_FILE);
   const locations = loadData(LOCATIONS_FILE);
-  
+
   // Enrichir chaque article avec les informations de réservation
   const enrichedStock = stock.map(item => {
-    // Calculer les réservations actives pour cet article
-    const activeBookings = locations.filter(loc => 
-      loc.itemId === item.id && 
-      ['approved', 'ongoing', 'pending'].includes(loc.status)
+    // Calculer les réservations actives pour cet article (pending et approved seulement)
+    const activeBookings = locations.filter(loc =>
+      loc.itemId === item.id &&
+      ['approved', 'pending'].includes(loc.status)
     );
-    
+
     // Calculer la quantité totale réservée
     const totalBooked = activeBookings.reduce((sum, loc) => sum + (loc.qty || 1), 0);
-    
+
     // Calculer la disponibilité
     const available = Math.max(0, item.qty - totalBooked);
-    
+
     return {
       ...item,
       totalBooked,
@@ -383,7 +382,7 @@ app.get('/stock', requireAuth, (req, res) => {
       }))
     };
   });
-  
+
   res.json(enrichedStock);
 });
 
@@ -396,21 +395,21 @@ app.get('/stock/simple', requireAuth, (req, res) => {
 app.get('/public/stock', (req, res) => {
   const stock = loadData(STOCK_FILE);
   const locations = loadData(LOCATIONS_FILE);
-  
+
   // Retourner les infos nécessaires pour le formulaire public avec disponibilité
   const publicStock = stock.map(item => {
-    // Calculer les réservations actives pour cet article
-    const activeBookings = locations.filter(loc => 
-      loc.itemId === item.id && 
-      ['approved', 'ongoing', 'pending'].includes(loc.status)
+    // Calculer les réservations actives pour cet article (pending et approved seulement)
+    const activeBookings = locations.filter(loc =>
+      loc.itemId === item.id &&
+      ['approved', 'pending'].includes(loc.status)
     );
-    
+
     // Calculer la quantité totale réservée
     const totalBooked = activeBookings.reduce((sum, loc) => sum + (loc.qty || 1), 0);
-    
+
     // Calculer la disponibilité
     const available = Math.max(0, item.qty - totalBooked);
-    
+
     return {
       id: item.id,
       name: item.name,
@@ -419,11 +418,10 @@ app.get('/public/stock', (req, res) => {
       available: available,
       totalBooked: totalBooked,
       description: item.description,
-      photo: item.photo,
-      caution: item.caution
+      photo: item.photo
     };
   });
-  
+
   res.json(publicStock);
 });
 
@@ -457,9 +455,9 @@ app.post('/public/check-availability', (req, res) => {
         continue;
       }
 
-      // Trouver les conflits pour ce matériel (toutes les réservations actives)
+      // Trouver les conflits pour ce matériel (réservations pending et approved)
       const conflicts = locations.filter(location => {
-        if (location.itemId !== itemId || !['approved', 'ongoing', 'pending'].includes(location.status)) {
+        if (location.itemId !== itemId || !['approved', 'pending'].includes(location.status)) {
           return false;
         }
 
@@ -747,10 +745,10 @@ app.put('/locations/:id', requireAuth, (req, res) => {
     return res.status(404).json({ error: "Réservation non trouvée" });
   }
   
-  // Vérifier la disponibilité en excluant la réservation actuelle et en prenant en compte toutes les réservations actives
-  const otherLocations = locations.filter(loc => 
-    loc.id !== locationId && 
-    ['approved', 'ongoing', 'pending'].includes(loc.status)
+  // Vérifier la disponibilité en excluant la réservation actuelle
+  const otherLocations = locations.filter(loc =>
+    loc.id !== locationId &&
+    ['approved', 'pending'].includes(loc.status)
   );
   const stock = loadData(STOCK_FILE).find(i => i.id === itemId);
   const overlap = otherLocations.filter(loc => loc.itemId === itemId && (
@@ -758,7 +756,7 @@ app.put('/locations/:id', requireAuth, (req, res) => {
     (new Date(to) >= new Date(loc.from))
   ));
   const qtyBooked = overlap.reduce((sum, l) => sum + (l.qty || 1), 0);
-  
+
   if ((stock.qty - qtyBooked) < qty) {
     return res.status(400).json({ error: "Objet non disponible à ces dates" });
   }
@@ -786,31 +784,26 @@ app.put('/locations/:id', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-// Marquer une réservation comme terminée
 // Supprimer une réservation
 app.delete('/locations/:id', requireAuth, async (req, res) => {
   const locations = loadData(LOCATIONS_FILE);
   const locationId = parseInt(req.params.id);
 
-  // Trouver la location à supprimer pour envoyer l'email
+  // Trouver la location à supprimer
   const locationToDelete = locations.find(loc => loc.id === locationId);
   if (!locationToDelete) {
     return res.status(404).json({ error: "Réservation non trouvée" });
   }
 
   try {
-    // Envoyer email de suppression au client seulement si la location n'est pas terminée
-    if (locationToDelete.status !== 'finished') {
-      const stock = loadData(STOCK_FILE);
-      const item = stock.find(s => s.id === locationToDelete.itemId);
+    // Envoyer email de suppression au client
+    const stock = loadData(STOCK_FILE);
+    const item = stock.find(s => s.id === locationToDelete.itemId);
 
-      if (item) {
-        console.log(`📧 Envoi email de suppression pour location ${locationId} (statut: ${locationToDelete.status})...`);
-        await emailService.sendClientDeletion(locationToDelete, [{ location: locationToDelete, item }]);
-        console.log(`✅ Email de suppression envoyé à ${locationToDelete.contactEmail}`);
-      }
-    } else {
-      console.log(`⏭️ Location ${locationId} déjà terminée - aucun email d'annulation envoyé`);
+    if (item && locationToDelete.contactEmail) {
+      console.log(`📧 Envoi email d'annulation pour location ${locationId}...`);
+      await emailService.sendClientDeletion(locationToDelete, [{ location: locationToDelete, item }]);
+      console.log(`✅ Email d'annulation envoyé à ${locationToDelete.contactEmail}`);
     }
 
     // Supprimer la location
@@ -821,123 +814,6 @@ app.delete('/locations/:id', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('❌ Erreur lors de la suppression de la location:', error);
     res.status(500).json({ error: "Erreur lors de la suppression de la location" });
-  }
-});
-
-// Accepter le contrat (enregistrer les données de contrat)
-app.put('/locations/:id/accept-contract', requireAuth, (req, res) => {
-  const locations = loadData(LOCATIONS_FILE);
-  const locationId = parseInt(req.params.id);
-
-  const locationIndex = locations.findIndex(loc => loc.id === locationId);
-  if (locationIndex === -1) {
-    return res.status(404).json({ error: "Réservation non trouvée" });
-  }
-
-  if (locations[locationIndex].status !== 'approved') {
-    return res.status(400).json({ error: "Cette réservation doit être approuvée avant l'acceptation du contrat" });
-  }
-
-  // Enregistrer les données de contrat
-  if (req.body.contractAccepted) {
-    locations[locationIndex].contractAccepted = req.body.contractAccepted;
-    locations[locationIndex].contractAcceptedAt = req.body.contractAcceptedAt;
-    locations[locationIndex].contractAcceptedBy = req.body.contractAcceptedBy;
-  }
-
-  saveData(LOCATIONS_FILE, locations);
-  res.json({ ok: true });
-});
-
-// Démarrer une réservation (passer de 'approved' à 'ongoing' après paiement)
-app.put('/locations/:id/start', requireAuth, async (req, res) => {
-  const locations = loadData(LOCATIONS_FILE);
-  const locationId = parseInt(req.params.id);
-
-  const locationIndex = locations.findIndex(loc => loc.id === locationId);
-  if (locationIndex === -1) {
-    return res.status(404).json({ error: "Réservation non trouvée" });
-  }
-
-  if (locations[locationIndex].status !== 'approved') {
-    return res.status(400).json({ error: "Cette réservation doit être approuvée avant d'être démarrée" });
-  }
-
-  try {
-    // Mettre à jour le statut
-    locations[locationIndex].status = 'ongoing';
-    locations[locationIndex].startedAt = new Date().toISOString();
-    saveData(LOCATIONS_FILE, locations);
-
-    // Générer la facture
-    const location = locations[locationIndex];
-    const stock = loadData(STOCK_FILE);
-    const item = stock.find(s => s.id === location.itemId);
-
-    if (item) {
-      console.log(`📄 Génération du contrat pour location ${locationId}...`);
-
-      // Générer le contrat PDF
-      const contractFilename = await pdfService.generateContract(location, [{ location, item }]);
-      console.log(`✅ Contrat généré: ${contractFilename}`);
-
-      // Envoyer le contrat par email au client
-      await emailService.sendContractEmail(location, [{ location, item }], contractFilename);
-      console.log(`📧 Contrat envoyé par email à ${location.contactEmail}`);
-    }
-
-    res.json({ ok: true });
-  } catch (error) {
-    console.error('❌ Erreur lors du démarrage de la location:', error);
-    res.status(500).json({ error: "Erreur lors du démarrage de la location" });
-  }
-});
-
-// Terminer une réservation (passer de 'ongoing' à 'finished' et envoyer facture)
-app.put('/locations/:id/finish', requireAuth, async (req, res) => {
-  const locations = loadData(LOCATIONS_FILE);
-  const locationId = parseInt(req.params.id);
-
-  const locationIndex = locations.findIndex(loc => loc.id === locationId);
-  if (locationIndex === -1) {
-    return res.status(404).json({ error: "Réservation non trouvée" });
-  }
-
-  if (locations[locationIndex].status !== 'ongoing') {
-    return res.status(400).json({ error: "Cette réservation doit être en cours pour être terminée" });
-  }
-
-  try {
-    // Mettre à jour le statut
-    locations[locationIndex].status = 'finished';
-    locations[locationIndex].finishedAt = new Date().toISOString();
-    saveData(LOCATIONS_FILE, locations);
-
-    // Générer et envoyer la facture
-    const location = locations[locationIndex];
-    const stock = loadData(STOCK_FILE);
-    const item = stock.find(s => s.id === location.itemId);
-
-    if (item) {
-      console.log(`📄 Génération de la facture pour location terminée ${locationId}...`);
-
-      // Générer la facture PDF
-      const invoiceFilename = await pdfService.generateInvoice(location, [{ location, item }]);
-      console.log(`✅ Facture générée: ${invoiceFilename}`);
-
-      // Envoyer la facture par email au client
-      await emailService.sendInvoiceEmail(location, [{ location, item }], invoiceFilename);
-      console.log(`📧 Facture envoyée par email à ${location.contactEmail}`);
-
-      // Envoyer rappel au trésorier pour remboursement de caution
-      await emailService.sendTreasurerDepositRefund(location, [{ location, item }]);
-      console.log(`📧 Rappel de remboursement de caution envoyé au trésorier`);
-    }
-
-    res.json({ ok: true });
-  } catch (error) {
-    console.error('❌ Erreur lors de la finalisation de la location:', error);
-    res.status(500).json({ error: "Erreur lors de la finalisation de la location" });
   }
 });
 
@@ -1093,20 +969,6 @@ app.post('/public/locations', async (req, res) => {
       return res.status(404).json({ error: 'Article non trouvé' });
     }
 
-    // Calculer les jours de location
-    const calculateDays = (fromDate, toDate) => {
-      const from = new Date(fromDate);
-      const to = new Date(toDate);
-      const diffTime = Math.abs(to - from);
-      const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 pour inclure le jour de début
-      return Math.max(1, diffDays); // Minimum 1 jour
-    };
-    const days = calculateDays(from, to);
-
-    // Calculer les totaux
-    const totalPrice = item.price * qty * days;
-    const totalCaution = item.caution * qty;
-
     // Créer la location
     const locations = loadData(LOCATIONS_FILE);
     const newLocation = {
@@ -1120,8 +982,6 @@ app.post('/public/locations', async (req, res) => {
       customerPhone,
       customerAddress,
       comments,
-      totalPrice,
-      totalCaution,
       status: 'pending',
       createdAt: new Date().toISOString()
     };
@@ -1328,72 +1188,6 @@ app.get('/data', requireAuth, (req, res) => {
   } catch (error) {
     console.error('Erreur chargement données:', error);
     res.status(500).json({ error: 'Erreur serveur' });
-  }
-});
-
-// Route pour lister les documents
-app.get('/api/documents', requireAuth, (req, res) => {
-  try {
-    const documents = pdfService.listDocuments();
-    res.json(documents);
-  } catch (error) {
-    console.error('Erreur chargement documents:', error);
-    res.status(500).json({ error: 'Erreur lors du chargement des documents' });
-  }
-});
-
-// Route pour télécharger un document
-app.get('/api/documents/download/:filename', requireAuth, (req, res) => {
-  try {
-    const filename = req.params.filename;
-    const filePath = path.join(pdfService.getDocumentsPath(), filename);
-
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: 'Document non trouvé' });
-    }
-
-    res.download(filePath, filename);
-  } catch (error) {
-    console.error('Erreur téléchargement document:', error);
-    res.status(500).json({ error: 'Erreur lors du téléchargement' });
-  }
-});
-
-// Route pour visualiser un document
-app.get('/api/documents/view/:filename', requireAuth, (req, res) => {
-  try {
-    const filename = req.params.filename;
-    const filePath = path.join(pdfService.getDocumentsPath(), filename);
-
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: 'Document non trouvé' });
-    }
-
-    res.sendFile(filePath);
-  } catch (error) {
-    console.error('Erreur visualisation document:', error);
-    res.status(500).json({ error: 'Erreur lors de la visualisation' });
-  }
-});
-
-// Route pour supprimer un document
-app.delete('/api/documents/delete/:filename', requireAuth, (req, res) => {
-  try {
-    const filename = req.params.filename;
-    const filePath = path.join(pdfService.getDocumentsPath(), filename);
-
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: 'Document non trouvé' });
-    }
-
-    // Supprimer le fichier
-    fs.unlinkSync(filePath);
-    console.log(`📄 Document supprimé: ${filename}`);
-
-    res.json({ success: true, message: 'Document supprimé avec succès' });
-  } catch (error) {
-    console.error('Erreur suppression document:', error);
-    res.status(500).json({ error: 'Erreur lors de la suppression' });
   }
 });
 
